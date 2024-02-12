@@ -3,13 +3,13 @@
 import os,sys
 import yaml
 import asyncio
-from azure.storage.blob.aio import BlobServiceClient
-from tqdm.asyncio import tqdm_asyncio
+from azure.storage.blob import BlobServiceClient
+from tqdm import tqdm
 from from_root import from_root, from_here
 import pandas as pd
 import matplotlib.pyplot as plt 
 
-async def get_blob_metrics(account_url, sas_token, container_name):
+def get_blob_metrics(account_url, sas_token, container_name):
     """Uses container client to return a list of jpg files and a list of raw files present in the container
 
     Returns:
@@ -23,15 +23,15 @@ async def get_blob_metrics(account_url, sas_token, container_name):
     total_memory_jpg = 0
     total_memory_raw = 0
 
-    async with BlobServiceClient(
+    with BlobServiceClient(
         account_url=account_url, credential=sas_token
     ) as blob_service_client:
         container_client = blob_service_client.get_container_client(container_name)
  
-        async for blob in tqdm_asyncio(container_client.list_blobs()):
+        for blob in tqdm(container_client.list_blobs()):
             base_name, extension = os.path.splitext(blob.name)
             blob_client = container_client.get_blob_client(blob.name)
-            blob_properties = await blob_client.get_blob_properties()
+            blob_properties = blob_client.get_blob_properties()
             if extension.lower() == ".jpg":
                 jpg_files.add(str(blob.name))
                 total_memory_jpg += (blob_properties.size / pow(1024,3))
@@ -41,7 +41,7 @@ async def get_blob_metrics(account_url, sas_token, container_name):
 
     return list(jpg_files), list(raw_files), total_memory_jpg, total_memory_raw
 
-async def main():
+def main():
 
     __auth_config_name = 'authorized_keys.yaml'
     with open((os.path.join(str(from_root('')),__auth_config_name)), 'r') as file:
@@ -51,8 +51,8 @@ async def main():
     sas_token = __auth_config_data["blobs"][container_name]["sas_token"] 
     account_url = __auth_config_data["blobs"][container_name]["url"]
 
-    jpg_imgs_names, raw_imgs_names, total_memory_jpg, total_memory_raw = await get_blob_metrics(account_url, sas_token, container_name)
-    print(f"Total Storage used for JPG : {total_memory_jpg}")
-    print(f"Total Storage used for ARW : {total_memory_raw}")
+    jpg_imgs_names, raw_imgs_names, total_memory_jpg, total_memory_raw = get_blob_metrics(account_url, sas_token, container_name)
+    print(f"Total Storage used for JPG : {total_memory_jpg} GB")
+    print(f"Total Storage used for ARW : {total_memory_raw} GB")
 
-asyncio.run(main())
+main()
