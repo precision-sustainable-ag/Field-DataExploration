@@ -2,45 +2,40 @@
 
 import os,sys
 import yaml
-import datetime
+from datetime import datetime
 import asyncio
+import pandas as pd 
 from azure.storage.blob.aio import BlobServiceClient
 from tqdm.asyncio import tqdm_asyncio
 from from_root import from_root, from_here
-import pandas as pd
 sys.path.append(str(from_root('logging')))
-from data_logger import log_memory
+from data_logger import log_images
+
 async def get_blob_metrics(account_url, sas_token, container_name):
-    """Uses container client to return a list of jpg files and a list of raw files present in the container
+    """
+    Uses container client to return detailed metrics for jpg and raw files in the container.
 
     Returns:
-        jpg_files (list): list of present jpg files in container
-        raw_files (list): list of present raw files in container
-        total_memory_jpg (float): total (Gb) memory for JPG images
-        total_memory_raw (float): total (Gb) memory for .ARW images
+        images_details (list): List of dictionaries with details for each image.
     """
-    jpg_files = set()
-    raw_files = set()
-    total_memory_jpg = 0
-    total_memory_raw = 0
+    images_details = []
 
     async with BlobServiceClient(
         account_url=account_url, credential=sas_token
     ) as blob_service_client:
         container_client = blob_service_client.get_container_client(container_name)
- 
-        async for blob in tqdm_asyncio(container_client.list_blobs()):
-            base_name, extension = os.path.splitext(blob.name)
-            blob_client = container_client.get_blob_client(blob.name)
-            blob_properties = await blob_client.get_blob_properties()
-            if extension.lower() == ".jpg":
-                jpg_files.add(str(blob.name))
-                total_memory_jpg += (blob_properties.size / pow(1024,3))
-            elif extension.lower() == ".arw":
-                raw_files.add(str(blob.name))
-                total_memory_raw += (blob_properties.size / pow(1024,3))
 
-    return list(jpg_files), list(raw_files), total_memory_jpg, total_memory_raw
+        async for blob in tqdm_asyncio(container_client.list_blobs()):
+
+            image_detail = {
+                "name": blob.name, # blob name 
+                "memory_mb": float(blob.size / pow(1024, 2)), # convert kb to mb
+                "container": blob.container, # get container name
+                "creation_time_utc": blob.creation_time, # get creation time
+            }
+            images_details.append(image_detail)
+
+    return images_details
 
 async def main():
 
@@ -53,9 +48,10 @@ async def main():
     account_url = __auth_config_data["blobs"][container_name]["url"]
 
     # Get data from Blob servers
-    jpg_imgs_names, raw_imgs_names, total_memory_jpg, total_memory_raw = await get_blob_metrics(account_url, sas_token, container_name)
-    time_stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    # Logging memory details
-    log_memory(time_stamp,container_name,total_memory_jpg,total_memory_raw)
+    images_details = await get_blob_metrics(account_url, sas_token, container_name)
+    # Convert the list of dictionaries to a Pandas DataFrame
+    time_stamp = datetime.utcnow().strftime("%Y-%m-%d")
+
+    log_images(time_stamp,container_name,images_details)
 
 asyncio.run(main())

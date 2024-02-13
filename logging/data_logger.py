@@ -1,31 +1,26 @@
 #!/usr/bin/env python3
 import os
-from datetime import datetime
 from from_root import from_here
-import csv
 from pathlib import Path
+import pandas as pd
 
-def log_memory(time_stamp,container_name:str,jpg_size_data:float,raw_size_data:float):
+table_log_dir = from_here("tables")
+Path(table_log_dir).mkdir(parents=True, exist_ok=True)
 
-    # if csv file doesn't exist, create one
-    memory_log_dir = from_here("blob_memory_logs")
-    Path(memory_log_dir).mkdir(parents=True, exist_ok=True)
-    memory_log_file = memory_log_dir / "memory_log.csv"
+def log_images(time_stamp,container_name,image_list):
+    """
+        This image logger accepts arguments 
+            time_stamp (str) : datetime.utcnow().strftime("%Y-%m-%d")
+            container_name (str) : "wirimagerepo"
+            image_list (list) : [{
+                                    "name": blob.name, # Get name 
+                                    "memory_mb": float(blob.size / pow(1024, 2)), # mb
+                                    "container": blob.container,
+                                    "creation_time_utc": blob.creation_time,
+                                }]
+    """
 
-    # Create File is not exists
-    if not os.path.exists(memory_log_file):
-        i_fields = ['Timestamp', 'Container Name','JPG Size (Gb)','ARW Size (Gb)']
-        with open(memory_log_file, 'w', newline='') as file:
-            writer = csv.DictWriter(file, fieldnames=i_fields)
-            writer.writeheader()
-    # Create sample data log query
-    i_query = {'Timestamp': time_stamp, 
-               'Container Name': container_name,
-               'JPG Size (Gb)': jpg_size_data,
-               'ARW Size (Gb)': raw_size_data}
-
-    with open(memory_log_file, 'a', newline='') as file: 
-        writer = csv.DictWriter(file, fieldnames = i_query)
-        writer.writerow(i_query)
-
-    print("Logged Blob Metrics",i_query)
+    # Create Dataframe for the table
+    df_images_details = pd.DataFrame(image_list)
+    # Export to csv 
+    df_images_details.to_csv(f"{table_log_dir}/{container_name}_metrics_{time_stamp}.csv")
