@@ -2,13 +2,14 @@
 
 import os,sys
 import yaml
+import datetime
 import asyncio
 from azure.storage.blob.aio import BlobServiceClient
 from tqdm.asyncio import tqdm_asyncio
 from from_root import from_root, from_here
 import pandas as pd
-import matplotlib.pyplot as plt 
-
+sys.path.append(str(from_root('logging')))
+from data_logger import log_memory
 async def get_blob_metrics(account_url, sas_token, container_name):
     """Uses container client to return a list of jpg files and a list of raw files present in the container
 
@@ -51,8 +52,10 @@ async def main():
     sas_token = __auth_config_data["blobs"][container_name]["sas_token"] 
     account_url = __auth_config_data["blobs"][container_name]["url"]
 
+    # Get data from Blob servers
     jpg_imgs_names, raw_imgs_names, total_memory_jpg, total_memory_raw = await get_blob_metrics(account_url, sas_token, container_name)
-    print(f"Total Storage used for JPG : {total_memory_jpg}")
-    print(f"Total Storage used for ARW : {total_memory_raw}")
+    time_stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    # Logging memory details
+    log_memory(time_stamp,container_name,total_memory_jpg,total_memory_raw)
 
 asyncio.run(main())
