@@ -40,7 +40,7 @@ async def get_blob_metrics(account_url, sas_token, container_name):
 async def main():
 
     __auth_config_name = 'authorized_keys.yaml'
-    with open((os.path.join(str(from_root('')),__auth_config_name)), 'r') as file:
+    with open((os.path.join(str(from_root('keys')),__auth_config_name)), 'r') as file:
         __auth_config_data = yaml.safe_load(file)
 
     container_name = "weedsimagerepo"

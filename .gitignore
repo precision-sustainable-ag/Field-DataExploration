@@ -2,4 +2,4 @@
 **/__pycache__
 .ipynb_checkpoints
 
-authorized_keys_temp.yaml
+authorized_keys.yaml
