@@ -6,6 +6,10 @@ blobs:
     sas_token: ""
 
 tables:
+  wirmastermeta:
+    url: ""
+    sas_token: ""
+    
   wirimagerefs:
     url: ""
     sas_token: ""
@@ -15,6 +19,10 @@ tables:
     sas_token: ""
 
   wircropsmeta:
+      url: ""
+      sas_token: ""
+    
+  wirweedsmeta:
       url: ""
       sas_token: ""
   

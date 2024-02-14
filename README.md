@@ -15,3 +15,15 @@ This repo is the central hub for the initial phase of data exploration and asses
 
 5. **Data Organization and Issue Resolution**: Provides strategies and scripts for identifying immediate dataset issues, along with solutions to these challenges.
 
+
+---
+Run using: 
+```bash
+python FIELD_REPORT.py general.task=<module_name>
+```
+
+For example: 
+```bash
+python FIELD_REPORT.py general.task=wir_blob_data_generator
+```
+---
