@@ -7,17 +7,18 @@ import pandas as pd
 table_log_dir = from_here("tables")
 Path(table_log_dir).mkdir(parents=True, exist_ok=True)
 
-def log_images(time_stamp,container_name,image_list):
+def log_wirtable(time_stamp,container_name,image_list):
     """
         This image logger accepts arguments 
-            time_stamp (str) : datetime.utcnow().strftime("%Y-%m-%d")
-            container_name (str) : "wirimagerepo"
-            image_list (list) : [{
-                                    "name": blob.name, # Get name 
-                                    "memory_mb": float(blob.size / pow(1024, 2)), # mb
-                                    "container": blob.container,
-                                    "creation_time_utc": blob.creation_time,
-                                }]
+            Example :
+                time_stamp (str) : datetime.utcnow().strftime("%Y-%m-%d")
+                container_name (str) : "wirimagerepo"
+                image_list (list[dict{}]) : [{
+                                        "name": blob.name, # Get name 
+                                        "memory_mb": float(blob.size / pow(1024, 2)), # mb
+                                        "container": blob.container,
+                                        "creation_time_utc": blob.creation_time,
+                                    }]
     """
 
     # Create Dataframe for the table

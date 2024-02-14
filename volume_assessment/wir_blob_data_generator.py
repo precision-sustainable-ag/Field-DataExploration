@@ -9,7 +9,7 @@ from azure.storage.blob.aio import BlobServiceClient
 from tqdm.asyncio import tqdm_asyncio
 from from_root import from_root, from_here
 sys.path.append(str(from_root('logging')))
-from data_logger import log_images
+from data_logger import log_wirtable
 
 async def get_blob_metrics(account_url, sas_token, container_name):
     """
@@ -43,15 +43,15 @@ async def main():
     with open((os.path.join(str(from_root('keys')),__auth_config_name)), 'r') as file:
         __auth_config_data = yaml.safe_load(file)
 
-    container_name = "weedsimagerepo"
-    sas_token = __auth_config_data["blobs"][container_name]["sas_token"] 
-    account_url = __auth_config_data["blobs"][container_name]["url"]
+    for container_name in __auth_config_data["blobs"]:
+        sas_token = __auth_config_data["blobs"][container_name]["sas_token"] 
+        account_url = __auth_config_data["blobs"][container_name]["url"]
 
-    # Get data from Blob servers
-    images_details = await get_blob_metrics(account_url, sas_token, container_name)
-    # Convert the list of dictionaries to a Pandas DataFrame
-    time_stamp = datetime.utcnow().strftime("%Y-%m-%d")
+        # Get data from Blob servers
+        images_details = await get_blob_metrics(account_url, sas_token, container_name)
+        # Convert the list of dictionaries to a Pandas DataFrame
+        time_stamp = datetime.utcnow().strftime("%Y-%m-%d")
 
-    log_images(time_stamp,container_name,images_details)
+        log_wirtable(time_stamp,container_name,images_details)
 
 asyncio.run(main())
