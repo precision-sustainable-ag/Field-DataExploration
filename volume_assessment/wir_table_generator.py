@@ -1,7 +1,7 @@
+#!/usr/bin/env python3
 from azure.core.credentials import AzureSasCredential
 from azure.data.tables import TableServiceClient
 import yaml
-import pandas as pd
 import os, sys
 from datetime import datetime
 from tqdm import tqdm
