@@ -1,6 +1,5 @@
 from azure.core.credentials import AzureSasCredential
 from azure.data.tables import TableServiceClient
-import asyncio
 import yaml
 import pandas as pd
 import os, sys
