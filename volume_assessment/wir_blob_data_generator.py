@@ -47,14 +47,15 @@ async def main():
     with open((os.path.join(str(from_root('keys')),__auth_config_name)), 'r') as file:
         __auth_config_data = yaml.safe_load(file)
 
+    # Convert the list of dictionaries to a Pandas DataFrame
+    time_stamp = datetime.utcnow().strftime("%Y-%m-%d")
+
     for container_name in tqdm_asyncio(__auth_config_data["blobs"]):
         sas_token = __auth_config_data["blobs"][container_name]["sas_token"] 
         account_url = __auth_config_data["blobs"][container_name]["url"]
 
         # Get data from Blob servers
         images_details = await get_blob_metrics(account_url, sas_token, container_name)
-        # Convert the list of dictionaries to a Pandas DataFrame
-        time_stamp = datetime.utcnow().strftime("%Y-%m-%d")
 
         log_wirtable(time_stamp,container_name,images_details)
 
