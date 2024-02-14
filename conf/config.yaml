@@ -14,18 +14,16 @@ general:
 
 pipeline_keys: ${general.workdir}/keys/authorized_keys.yaml
 
-job:
-  job_now_date: &nowdir ${now:%Y-%m-%d}
-  job_now_time: ${now:%H:%M:%S}
-  job_now: ${job.job_now_date}/${job.job_now_time} 
-  jobdir: ${data.datadir}/${job.job_now}
-
-logs:
-  logdir: ${general.workdir}/logging
-  processed: ${logs.logdir}/processed.txt
-
 data:
   datadir: ${general.workdir}/data
   tablesdir: ${data.datadir}/tables/${job.job_now_date}
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
 
+logs:
+  logdir: ${general.workdir}/logging
+
+job:
+  job_now_date: &nowdir ${now:%Y-%m-%d}
+  job_now_time: ${now:%H:%M:%S}
+  job_now: ${job.job_now_date}/${job.job_now_time} 
+  jobdir: ${data.datadir}/${job.job_now}
