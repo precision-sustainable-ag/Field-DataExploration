@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import os
-from from_root import from_here
+from from_root import from_here, from_root
 from pathlib import Path
 import pandas as pd
 
-table_log_dir = from_here("tables")
+table_log_dir = os.path.join(str(from_root("volume_assessment")),'data')
 Path(table_log_dir).mkdir(parents=True, exist_ok=True)
 
 def log_wirtable(time_stamp,container_name,image_list):
