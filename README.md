@@ -30,18 +30,18 @@ After installing Conda, you can set up an environment for this project using an 
 
 1. Clone this repository to your local machine.
 2. Navigate to the repository directory in your terminal.
-3. Locate the `environment.yml` file in the repository. This file contains the list of packages needed for the project.
+3. Locate the `environment.yaml` file in the repository. This file contains the list of packages needed for the project.
 4. Create a new Conda environment by running the following command:
    ```bash
    conda env create -f environment.yml
    ```
-   This command reads the `environment.yml` file and creates an environment with the name and dependencies specified within it.
+   This command reads the `environment.yaml` file and creates an environment with the name and dependencies specified within it.
 
 5. Once the environment is created, activate it with:
    ```bash
    conda activate <env_name>
    ```
-   Replace `<env_name>` with the name of the environment specified in the `environment.yml` file.
+   Replace `<env_name>` with the name of the environment specified in the `environment.yaml` file.
 
 
 ### Running the Script
