@@ -76,12 +76,14 @@ class BlobMetricExporter:
             images_details = self.get_blob_metrics(
                 account_url, sas_token, container_name
             )
-            df_images_details = pd.DataFrame(images_details)
-            # Export to CSV
-            csv_path = Path(self.blobs_dir, f"{container_name}_blob_metrics.csv")
-            df_images_details.to_csv(csv_path)
-            log.info(f"Exported {container_name} data to {csv_path}")
-
+            if images_details :
+                df_images_details = pd.DataFrame(images_details)
+                # Export to CSV
+                csv_path = Path(self.blobs_dir, f"{container_name}_blob_metrics.csv")
+                df_images_details.to_csv(csv_path)
+                log.info(f"Exported {container_name} data to {csv_path}")
+            else :
+                log.warn(f"{container_name} data is empty, Not saving!")
 
 def main(cfg: DictConfig) -> None:
     log.debug(f"Starting {cfg.general.task}")

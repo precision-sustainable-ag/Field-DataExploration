@@ -59,11 +59,14 @@ class TableExporter:
             account_url = self.__auth_config_data["tables"][table_name]["url"]
             # Get data from Azure Table Storage
             table_data = self.get_table_data(account_url, sas_token, table_name)
-            df_images_details = pd.DataFrame(table_data)
-            # Export to CSV
-            csv_path = Path(self.tables_dir, f"{table_name}_table_metrics.csv")
-            df_images_details.to_csv(csv_path)
-            log.info(f"Exported {table_name} data to {csv_path}")
+            if table_data :
+                df_images_details = pd.DataFrame(table_data)
+                # Export to CSV
+                csv_path = Path(self.tables_dir, f"{table_name}_table_metrics.csv")
+                df_images_details.to_csv(csv_path)
+                log.info(f"Exported {table_name} data to {csv_path}")
+            else :
+                log.warn(f"{table_name} data is empty, Not saving!")
 
 
 def main(cfg: DictConfig) -> None:
