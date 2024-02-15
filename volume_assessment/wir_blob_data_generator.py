@@ -1,62 +1,89 @@
 #!/usr/bin/env python3
+import logging
+from pathlib import Path
 
-import os,sys
-import yaml
-from datetime import datetime
-import asyncio
-from azure.storage.blob.aio import BlobServiceClient
-from tqdm.asyncio import tqdm_asyncio
-from from_root import from_root, from_here
-sys.path.append(str(from_root('logging')))
-from data_logger import log_wirtable
+import pandas as pd
+from azure.storage.blob import BlobServiceClient
+from omegaconf import DictConfig
+from tqdm import tqdm
 
-async def get_blob_metrics(account_url, sas_token, container_name):
+from utils.utils import read_yaml
+
+log = logging.getLogger(__name__)
+
+
+class BlobMetricExporter:
     """
-    Uses container client to return detailed metrics for jpg and raw files in the container.
+    A class designed to export metrics of blob files from Azure Blob Storage to CSV files.
 
-    Returns:
-        images_details (list): List of dictionaries with details for each image.
+    This class connects to Azure Blob Storage, retrieves detailed metrics for files within specified containers,
+    and exports these metrics into CSV files for further analysis or reporting.
+
+    Attributes:
+        __auth_config_data (dict): Configuration data containing Azure Blob Storage credentials,
+                                including account URLs and SAS tokens for each container.
+        blobs_dir (Path): The directory path where CSV files will be stored.
+
+    Methods:
+        __init__(cfg): Initializes the BlobMetricExporter instance with configuration from a DictConfig object.
+        get_blob_metrics(account_url, sas_token, container_name): Retrieves file metrics from a specified container in Azure Blob Storage.
+        get_blob_csv(): Iterates through configured containers, retrieves their file metrics, and exports the metrics to CSV files.
     """
-    try :
 
-        images_details = []
+    def __init__(self, cfg) -> None:
+        self.__auth_config_data = read_yaml(cfg.pipeline_keys)
+        self.blobs_dir = cfg.data.blobsdir
+        Path(self.blobs_dir).mkdir(exist_ok=True, parents=True)
 
-        async with BlobServiceClient(
-            account_url=account_url, credential=sas_token
-        ) as blob_service_client:
+    def get_blob_metrics(self, account_url, sas_token, container_name):
+        """
+        Uses container client to return detailed metrics for jpg and raw files in the container.
+
+        Returns:
+            images_details (list): List of dictionaries with details for each image.
+        """
+        try:
+
+            images_details = []
+
+            blob_service_client = BlobServiceClient(
+                account_url=account_url, credential=sas_token
+            )
             container_client = blob_service_client.get_container_client(container_name)
 
-            async for blob in tqdm_asyncio(container_client.list_blobs()):
+            for blob in tqdm(container_client.list_blobs()):
 
                 image_detail = {
-                    "name": blob.name, # blob name 
-                    "memory_mb": float(blob.size / pow(1024, 2)), # convert kb to mb
-                    "container": blob.container, # get container name
-                    "creation_time_utc": blob.creation_time, # get creation time
+                    "name": blob.name,  # blob name
+                    "memory_mb": float(blob.size / pow(1024, 2)),  # convert kb to mb
+                    "container": blob.container,  # get container name
+                    "creation_time_utc": blob.creation_time,  # get creation time
                 }
                 images_details.append(image_detail)
 
-        return images_details
+            return images_details
 
-    except Exception as error :
-        print(f"Error! Check {container_name} authorization parameters")
+        except Exception as error:
 
-async def main():
+            print(f"Error! Check {container_name} authorization parameters")
 
-    __auth_config_name = 'authorized_keys.yaml'
-    with open((os.path.join(str(from_root('keys')),__auth_config_name)), 'r') as file:
-        __auth_config_data = yaml.safe_load(file)
+    def get_blob_csv(self):
+        for container_name in tqdm(self.__auth_config_data["blobs"]):
+            sas_token = self.__auth_config_data["blobs"][container_name]["sas_token"]
+            account_url = self.__auth_config_data["blobs"][container_name]["url"]
 
-    # Convert the list of dictionaries to a Pandas DataFrame
-    time_stamp = datetime.utcnow().strftime("%Y-%m-%d")
+            # Get data from Blob servers
+            images_details = self.get_blob_metrics(
+                account_url, sas_token, container_name
+            )
+            df_images_details = pd.DataFrame(images_details)
+            # Export to CSV
+            csv_path = Path(self.blobs_dir, f"{container_name}_blob_metrics.csv")
+            df_images_details.to_csv(csv_path)
+            log.info(f"Exported {container_name} data to {csv_path}")
 
-    for container_name in tqdm_asyncio(__auth_config_data["blobs"]):
-        sas_token = __auth_config_data["blobs"][container_name]["sas_token"] 
-        account_url = __auth_config_data["blobs"][container_name]["url"]
 
-        # Get data from Blob servers
-        images_details = await get_blob_metrics(account_url, sas_token, container_name)
-
-        log_wirtable(time_stamp,container_name,images_details)
-
-asyncio.run(main())
+def main(cfg: DictConfig) -> None:
+    log.debug(f"Starting {cfg.general.task}")
+    exporter = BlobMetricExporter(cfg)
+    exporter.get_blob_csv()
