@@ -65,7 +65,7 @@ class BlobMetricExporter:
 
         except Exception as error:
 
-            print(f"Error! Check {container_name} authorization parameters")
+            log.exception(f"Error! Check {container_name} authorization parameters")
 
     def get_blob_csv(self):
         for container_name in tqdm(self.__auth_config_data["blobs"]):
