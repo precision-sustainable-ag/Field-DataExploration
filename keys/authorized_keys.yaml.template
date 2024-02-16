@@ -1,0 +1,31 @@
+# DO NOT SHARE KEYS ON GITHUB
+# Use this template to add new keys
+blobs:
+  weedsimagerepo:
+    url: ""
+    sas_token: ""
+
+tables:
+  wirmastermeta:
+    url: ""
+    sas_token: ""
+    
+  wirimagerefs:
+    url: ""
+    sas_token: ""
+
+  wircovercropsmeta:
+    url: ""
+    sas_token: ""
+
+  wircropsmeta:
+      url: ""
+      sas_token: ""
+    
+  wirweedsmeta:
+      url: ""
+      sas_token: ""
+  
+  wirlogs:
+      url: ""
+      sas_token: ""
