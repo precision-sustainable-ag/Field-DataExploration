@@ -18,6 +18,7 @@ data:
   datadir: ${general.workdir}/data
   tablesdir: ${data.datadir}/tables/${job.job_now_date}
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
+  processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
 
 logs:
   logdir: ${general.workdir}/logging

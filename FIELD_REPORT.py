@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import getpass
 import logging
 import sys
@@ -7,6 +8,7 @@ from hydra.utils import get_method
 from omegaconf import DictConfig, OmegaConf
 
 sys.path.append("volume_assessment")
+sys.path.append("data_analysis")
 
 log = logging.getLogger(__name__)
 
