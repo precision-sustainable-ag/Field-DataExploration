@@ -54,6 +54,8 @@ class TablePreProcessing:
         missing_rows = processed_blobs.query('MasterRefID != MasterRefID')
         # Delete rows with all nan values
         missing_rows = missing_rows.dropna(axis=1, how='all')
+        # remove values with missing MasterRefID
+        processed_blobs = processed_blobs[processed_blobs['MasterRefID'].notna()]
         # Save to csv
         csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
         processed_blobs.to_csv(csv_path)
