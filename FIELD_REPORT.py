@@ -22,16 +22,18 @@ def run_FIELD_REPORT(cfg: DictConfig) -> None:
     cfg = OmegaConf.create(cfg)
     whoami = getpass.getuser()
 
-    task = cfg.general.task
-    log.info(f"Starting {task} as {whoami}")
+    tasks = cfg.pipeline
+    log.info(f"Running {' ,'.join(tasks)} as {whoami}")
 
-    try:
-        task = get_method(f"{task}.main")
-        task(cfg)
+    for task in tasks:
+        cfg.general.task = task
+        try:
+            task = get_method(f"{task}.main")
+            task(cfg)
 
-    except Exception as e:
-        log.exception("Failed")
-        sys.exit(1)
+        except Exception as e:
+            log.exception("Failed")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

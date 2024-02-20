@@ -51,13 +51,7 @@ With the environment set up and activated, you can run the scripts provided in t
    ```
    conda activate field
    ```
-2. To run a script, use the following command syntax:
+2. Setup the pipeline in the main [config](conf/config.yaml#L11). To run a script, use the following command syntax:
    ```bash
-   python FIELD_REPORT.py general.task=<module_name>
+   python FIELD_REPORT.py
    ```
-   For example, to generate data using the `wir_blob_data_generator` module:
-   ```bash
-   python FIELD_REPORT.py general.task=wir_blob_data_generator
-   ```
-
-Replace `<module_name>` with the actual name of the module you're trying to execute. This will initiate the script and start the data processing or analysis as designed.

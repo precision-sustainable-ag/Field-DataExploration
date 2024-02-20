@@ -8,6 +8,11 @@ hydra:
     dir: ${logs.logdir}/${job.job_now}
   output_subdir: ${hydra.run.dir}/hydra
 
+pipeline:
+    - wir_table_generator
+    - wir_blob_data_generator
+    - process_blob_analysis
+
 general:
   task: # Leave empty as placeholder
   workdir: ${hydra:runtime.cwd}  # where the code is executed
