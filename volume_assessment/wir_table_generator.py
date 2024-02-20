@@ -6,7 +6,6 @@ from azure.core.credentials import AzureSasCredential
 from azure.data.tables import TableServiceClient
 from omegaconf import DictConfig
 from tqdm import tqdm
-
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)
@@ -59,17 +58,18 @@ class TableExporter:
             account_url = self.__auth_config_data["tables"][table_name]["url"]
             # Get data from Azure Table Storage
             table_data = self.get_table_data(account_url, sas_token, table_name)
-            if table_data :
+            if table_data:
                 df_images_details = pd.DataFrame(table_data)
                 # Export to CSV
                 csv_path = Path(self.tables_dir, f"{table_name}_table_metrics.csv")
                 df_images_details.to_csv(csv_path)
                 log.info(f"Exported {table_name} data to {csv_path}")
-            else :
+            else:
                 log.warn(f"{table_name} data is empty, Not saving!")
 
 
 def main(cfg: DictConfig) -> None:
-    log.debug(f"Starting {cfg.general.task}")
+    log.info(f"Starting {cfg.general.task}")
     exporter = TableExporter(cfg)
     exporter.get_table_csv()
+    log.info(f"{cfg.general.task} completed.")

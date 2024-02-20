@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# fmt: off
+# isort: off
 import os, sys
 from omegaconf import DictConfig
 from pathlib import Path
@@ -57,12 +59,20 @@ class TablePreProcessing:
         missing_rows = missing_rows.dropna(axis=1, how='all')
         # remove values with missing MasterRefID
         processed_blobs = processed_blobs[processed_blobs['MasterRefID'].notna()]
-        # Save to csv
-        csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
-        processed_blobs.to_csv(csv_path)
-        csv_path = Path(self.processed_datadir, self.missing_blob_fname)
-        missing_rows.to_csv(csv_path)
+        
+        if processed_blobs.empty:
+            log.error(f"processed_blobs df is empty, Not saving!")
+        else:
+            # Save to csv
+            csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
+            processed_blobs.to_csv(csv_path)
+            log.info(f"Exported processed_blobs to {csv_path}.")
+            csv_path = Path(self.processed_datadir, self.missing_blob_fname)
+            missing_rows.to_csv(csv_path)
+            log.info(f"Exported missing_rows to {csv_path}.")
+            
 
 def main(cfg: DictConfig) -> None:
-    log.debug(f"Starting {cfg.general.task}")
+    log.info(f"Starting {cfg.general.task}")
     exporter = TablePreProcessing(cfg)
+    log.info(f"{cfg.general.task} completed.")

@@ -9,7 +9,7 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 general:
-  task: ???
+  task: # Leave empty as placeholder
   workdir: ${hydra:runtime.cwd}  # where the code is executed
 
 pipeline_keys: ${general.workdir}/keys/authorized_keys.yaml
