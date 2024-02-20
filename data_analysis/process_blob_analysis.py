@@ -10,7 +10,21 @@ from utils.utils import read_csv_as_df
 log = logging.getLogger(__name__)
 
 class TablePreProcessing:
+    """
+    A class designed to pre-process wirimagerefs.csv and weedsimagerepo_blob_metrics.csv.
 
+    This reads respective csv files, performs data cleaning and merging.
+
+    Exports merged_blobs_refs.csv and missing_blobs_metadata.csv
+
+    Attributes:
+        __auth_config_data (dict): Configuration data containing Azure Blob Storage credentials,
+                                including account URLs and SAS tokens for each container.
+
+    Methods:
+        __init__(cfg): Initializes the BlobMetricExporter instance with configuration from a DictConfig object.
+        preprocess_imgrefs(blobs_csv,imageref_df): Inputs blob metric table and imageref table as pandas.DataFrame and exports pre-processed tables
+    """
     def __init__(self, cfg: DictConfig) -> None:
 
         blob_fname = "weedsimagerepo_blob_metrics.csv"
