@@ -7,7 +7,9 @@ import logging
 
 from utils.utils import read_csv_as_df
 log = logging.getLogger(__name__)
-
+"""
+    Execute this script : python FIELD_REPORT.py general.task=process_blob_analysis
+"""
 class TablePreProcessing:
     """
     A class designed to pre-process wirimagerefs.csv and weedsimagerepo_blob_metrics.csv.
