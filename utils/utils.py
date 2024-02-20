@@ -9,7 +9,7 @@ def read_yaml(path):
     except Exception as e :
         raise FileNotFoundError(f"File does not exist : {path}")
 
-def read_csv_as_list(path):
+def read_csv_as_df(path):
     try :
             csv_reader = pd.read_csv(path)
             # Return as dataframe
