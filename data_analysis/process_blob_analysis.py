@@ -6,7 +6,7 @@ import pandas as pd
 import logging
 
 import csv 
-from utils.utils import read_csv_as_list
+from utils.utils import read_csv_as_df
 log = logging.getLogger(__name__)
 
 class TablePreProcessing:
@@ -21,16 +21,11 @@ class TablePreProcessing:
         self.refs_table_dir = cfg.data.tablesdir
         self.processed_datadir = cfg.data.processed_datadir
         Path(self.processed_datadir).mkdir(exist_ok=True, parents=True)
-        self.blobs_csv = read_csv_as_list(os.path.join(self.blob_table_dir,blob_fname))
-        self.imagerefs_csv = read_csv_as_list(os.path.join(self.refs_table_dir,table_fname))
+        self.blobs_csv = read_csv_as_df(os.path.join(self.blob_table_dir,blob_fname))
+        self.imagerefs_csv = read_csv_as_df(os.path.join(self.refs_table_dir,table_fname))
         # Update original imagerefs table
         self.preprocess_imgrefs(self.blobs_csv,self.imagerefs_csv)
-
-    def __save_df_to_csv(self,csv_path,df_data):
-
-        df_data.to_csv(csv_path)
-
-    
+  
     def preprocess_imgrefs(self,blobs_csv,imageref_df):
         # Get image names from urls and adding a new column
         imageref_df["name"] = imageref_df["ImageURL"].apply(lambda url:os.path.basename(url))
@@ -39,9 +34,9 @@ class TablePreProcessing:
         # Get images that don't have MasterRefID
         missing_metadata = processed_blobs.query('MasterRefID != MasterRefID')
         csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
-        self.__save_df_to_csv(csv_path,processed_blobs)
+        processed_blobs.to_csv(csv_path)
         csv_path = Path(self.processed_datadir, self.missing_blob_fname)
-        self.__save_df_to_csv(csv_path,missing_metadata)
+        missing_metadata.to_csv(csv_path)
 
 def main(cfg: DictConfig) -> None:
     log.debug(f"Starting {cfg.general.task}")
