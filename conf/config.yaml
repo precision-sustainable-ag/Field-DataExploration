@@ -8,8 +8,13 @@ hydra:
     dir: ${logs.logdir}/${job.job_now}
   output_subdir: ${hydra.run.dir}/hydra
 
+pipeline:
+    - wir_table_generator
+    - wir_blob_data_generator
+    - process_blob_analysis
+
 general:
-  task: ???
+  task: # Leave empty as placeholder
   workdir: ${hydra:runtime.cwd}  # where the code is executed
 
 pipeline_keys: ${general.workdir}/keys/authorized_keys.yaml
@@ -18,6 +23,7 @@ data:
   datadir: ${general.workdir}/data
   tablesdir: ${data.datadir}/tables/${job.job_now_date}
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
+  processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
 
 logs:
   logdir: ${general.workdir}/logging

@@ -6,7 +6,6 @@ import pandas as pd
 from azure.storage.blob import BlobServiceClient
 from omegaconf import DictConfig
 from tqdm import tqdm
-
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)
@@ -76,16 +75,18 @@ class BlobMetricExporter:
             images_details = self.get_blob_metrics(
                 account_url, sas_token, container_name
             )
-            if images_details :
+            if images_details:
                 df_images_details = pd.DataFrame(images_details)
                 # Export to CSV
                 csv_path = Path(self.blobs_dir, f"{container_name}_blob_metrics.csv")
                 df_images_details.to_csv(csv_path)
                 log.info(f"Exported {container_name} data to {csv_path}")
-            else :
+            else:
                 log.warn(f"{container_name} data is empty, Not saving!")
 
+
 def main(cfg: DictConfig) -> None:
-    log.debug(f"Starting {cfg.general.task}")
+    log.info(f"Starting {cfg.general.task}")
     exporter = BlobMetricExporter(cfg)
     exporter.get_blob_csv()
+    log.info(f"{cfg.general.task} completed.")

@@ -10,7 +10,7 @@ handlers:
   file:
     class: logging.FileHandler
     formatter: simple
-    filename: ${hydra.runtime.output_dir}/${general.task}.log
+    filename: ${hydra.runtime.output_dir}/FIELD_REPORT.log
 root:
   handlers:
     - console
