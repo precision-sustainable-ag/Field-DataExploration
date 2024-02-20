@@ -22,7 +22,12 @@ class TablePreProcessing:
         self.processed_datadir = cfg.data.processed_datadir
         Path(self.processed_datadir).mkdir(exist_ok=True, parents=True)
         self.blobs_csv = read_csv_as_df(os.path.join(self.blob_table_dir,blob_fname))
+        # removing index
+        del self.blobs_csv[self.blobs_csv.columns[0]]
+
         self.imagerefs_csv = read_csv_as_df(os.path.join(self.refs_table_dir,table_fname))
+        # removing index
+        del self.imagerefs_csv[self.imagerefs_csv.columns[0]]
         # Update original imagerefs table
         self.preprocess_imgrefs(self.blobs_csv,self.imagerefs_csv)
   
@@ -31,18 +36,15 @@ class TablePreProcessing:
         imageref_df["name"] = imageref_df["ImageURL"].apply(lambda url:os.path.basename(url))
         # Left join on key = "name"
         processed_blobs = pd.merge(blobs_csv,imageref_df,on="name",how="left",left_index=False,right_index=False)
-        # remove "Unkown" column
-        del processed_blobs[processed_blobs.columns[0]]
         # Get images that don't have MasterRefID
-        missing_metadata = processed_blobs.query('MasterRefID != MasterRefID')
-        # remove "Unkown" column
-        del missing_metadata[missing_metadata.columns[0]]
-
+        missing_rows = processed_blobs.query('MasterRefID != MasterRefID')
+        # Delete rows with all nan values
+        missing_rows = missing_rows.dropna(axis=1, how='all')
         # Save to csv
         csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
         processed_blobs.to_csv(csv_path)
         csv_path = Path(self.processed_datadir, self.missing_blob_fname)
-        missing_metadata.to_csv(csv_path)
+        missing_rows.to_csv(csv_path)
 
 def main(cfg: DictConfig) -> None:
     log.debug(f"Starting {cfg.general.task}")
