@@ -31,8 +31,14 @@ class TablePreProcessing:
         imageref_df["name"] = imageref_df["ImageURL"].apply(lambda url:os.path.basename(url))
         # Left join on key = "name"
         processed_blobs = pd.merge(blobs_csv,imageref_df,on="name",how="left",left_index=False)
+        # remove "Unkown" column
+        del processed_blobs[processed_blobs.columns[0]]
         # Get images that don't have MasterRefID
         missing_metadata = processed_blobs.query('MasterRefID != MasterRefID')
+        # remove "Unkown" column
+        del missing_metadata[missing_metadata.columns[0]]
+
+        # Save to csv
         csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
         processed_blobs.to_csv(csv_path)
         csv_path = Path(self.processed_datadir, self.missing_blob_fname)
