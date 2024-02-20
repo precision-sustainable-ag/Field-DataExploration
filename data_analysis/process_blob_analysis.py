@@ -30,7 +30,7 @@ class TablePreProcessing:
         # Get image names from urls and adding a new column
         imageref_df["name"] = imageref_df["ImageURL"].apply(lambda url:os.path.basename(url))
         # Left join on key = "name"
-        processed_blobs = pd.merge(blobs_csv,imageref_df,on="name",how="left",left_index=False)
+        processed_blobs = pd.merge(blobs_csv,imageref_df,on="name",how="left",left_index=False,right_index=False)
         # remove "Unkown" column
         del processed_blobs[processed_blobs.columns[0]]
         # Get images that don't have MasterRefID
