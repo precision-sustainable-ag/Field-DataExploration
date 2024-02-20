@@ -5,7 +5,6 @@ from pathlib import Path
 import pandas as pd
 import logging
 
-import csv 
 from utils.utils import read_csv_as_df
 log = logging.getLogger(__name__)
 
