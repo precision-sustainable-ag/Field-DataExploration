@@ -51,7 +51,11 @@ With the environment set up and activated, you can run the scripts provided in t
    ```
    conda activate field
    ```
-2. Setup the pipeline in the main [config](conf/config.yaml#L11). To run a script, use the following command syntax:
+2. Run Volume Assessment: This command fetches data from blob container and tables, and stores them as csv files.
+   ```bash
+   sh run_volume_assessment.sh
+   ```
+3. [NOTE] Setup the pipeline in the main [config](conf/config.yaml#L11). To run a script, use the following command syntax:
    ```bash
    python FIELD_REPORT.py
    ```
