@@ -12,6 +12,7 @@ pipeline:
     - wir_table_generator
     - wir_blob_data_generator
     - process_blob_analysis
+    - process_tables_analysis
 
 general:
   task: # Leave empty as placeholder

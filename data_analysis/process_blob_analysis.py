@@ -10,9 +10,9 @@ import logging
 from utils.utils import read_csv_as_df
 log = logging.getLogger(__name__)
 """
-    Execute this script : python FIELD_REPORT.py general.task=process_blob_analysis
+    Execute this script : python FIELD_REPORT.py general.task=[process_blob_analysis]
 """
-class TablePreProcessing:
+class BlobTablePreProcessing:
     """
     A class designed to pre-process wirimagerefs.csv and weedsimagerepo_blob_metrics.csv.
 
@@ -59,7 +59,8 @@ class TablePreProcessing:
         missing_rows = missing_rows.dropna(axis=1, how='all')
         # remove values with missing MasterRefID
         processed_blobs = processed_blobs[processed_blobs['MasterRefID'].notna()]
-        
+        # removing RowKey from merged csv
+        processed_blobs = processed_blobs.drop('RowKey',axis=1)
         if processed_blobs.empty:
             log.error(f"processed_blobs df is empty, Not saving!")
         else:
@@ -74,5 +75,5 @@ class TablePreProcessing:
 
 def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
-    exporter = TablePreProcessing(cfg)
+    exporter = BlobTablePreProcessing(cfg)
     log.info(f"{cfg.general.task} completed.")
