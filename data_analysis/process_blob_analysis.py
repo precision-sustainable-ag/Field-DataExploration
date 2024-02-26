@@ -32,7 +32,7 @@ class BlobTablePreProcessing:
 
         blob_fname = "weedsimagerepo_blob_metrics.csv"
         table_fname = "wirimagerefs_table_metrics.csv"
-        self.processed_blob_ref_fname = 'merged_blobs_refs.csv'
+        self.processed_blob_ref_fname = 'merged_blobs_tables_metadata.csv'
         self.missing_blob_fname = 'missing_blobs_metadata.csv'
         self.blob_table_dir = cfg.data.blobsdir
         self.refs_table_dir = cfg.data.tablesdir

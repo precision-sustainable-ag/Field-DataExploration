@@ -42,6 +42,7 @@ class WIRTablesPreProcessing:
         self.wircropsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wircropsmeta_fname))
         del self.wircropsmeta_df[self.wircropsmeta_df.columns[0]]
         self.wircropsmeta_df = self.wircropsmeta_df.drop('RowKey',axis=1)
+        # [Q: Check CropTypr for N/A values? fill nan if not required ]
 
         self.wirweedsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wirweedsmeta_fname))
         del self.wirweedsmeta_df[self.wirweedsmeta_df.columns[0]]
@@ -54,16 +55,25 @@ class WIRTablesPreProcessing:
 
         ## append filename of merged csv file
         self.processed_tables_dir = cfg.data.processed_datadir
-        wirmergedtable_fname = "merged_blobs_refs.csv"
-        self.wirmergedtable_df = read_csv_as_df(os.path.join(self.processed_tables_dir,wirmergedtable_fname))
+        self.wirmergedtable_fname = "merged_blobs_tables_metadata.csv"
+        self.wirmergedtable_df = read_csv_as_df(os.path.join(self.processed_tables_dir,self.wirmergedtable_fname))
         del self.wirmergedtable_df[self.wirmergedtable_df.columns[0]]
 
         self.process_wir_tables()
 
     def process_wir_tables(self):
 
-        processed_table = pd.merge(self.wirmastermeta_df,self.wircovercropsmeta_df,how="left",on=["MasterRefID","CloudCover","GroundResidue","GroundCover"])
-        csv_path = Path(self.processed_tables_dir, "debug_processed.csv")
+        # merge MasterMeta and CoverCrops
+        processed_table = pd.merge(self.wirmastermeta_df,self.wircovercropsmeta_df,how="outer",on=["MasterRefID","CloudCover","GroundResidue","GroundCover"])
+        # merge [ MasterMeta , CoverCrops] and Crops
+        processed_table = pd.merge(processed_table,self.wircropsmeta_df,how="outer",on=["PartitionKey","MasterRefID"])
+        processed_table.rename(columns={"CropName":"CropType"},inplace=True) # everythin fine till here
+        # merge [MasterMeta , CoverCrops , Crops] and Weeds
+        processed_table = pd.merge(processed_table,self.wirweedsmeta_df,how="outer",on=["PartitionKey","MasterRefID"],suffixes=('_01', '_02'))
+        # merge [MasterMeta , CoverCrops , Crops, Weeds] and Blob Metadata
+        processed_table = pd.merge(self.wirmergedtable_df,processed_table,how="outer",on=["PartitionKey","MasterRefID"])
+        processed_table = processed_table[processed_table['name'].notna()]
+        csv_path = Path(self.processed_tables_dir, self.wirmergedtable_fname)
         processed_table.to_csv(csv_path)
 
 def main(cfg: DictConfig) -> None:
