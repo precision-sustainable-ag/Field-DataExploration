@@ -13,6 +13,7 @@ pipeline:
     - wir_blob_data_generator
     - process_blob_analysis
     - process_tables_analysis
+    - plot_raw_images
 
 general:
   task: # Leave empty as placeholder
@@ -26,6 +27,10 @@ data:
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
   processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
 
+report:
+  reportdir: ${general.workdir}/report
+  report_plots: ${report.reportdir}/${job.job_now_date}/plots
+  
 logs:
   logdir: ${general.workdir}/logging
 
