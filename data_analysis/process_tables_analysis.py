@@ -73,6 +73,38 @@ class WIRTablesPreProcessing:
         # merge [MasterMeta , CoverCrops , Crops, Weeds] and Blob Metadata
         processed_table = pd.merge(self.wirmergedtable_df,processed_table,how="outer",on=["PartitionKey","MasterRefID"])
         processed_table = processed_table[processed_table['name'].notna()]
+
+        # Create Species Column
+        processed_table["Species"] = None
+        processed_table["Species"] = processed_table["Species"].fillna(processed_table["WeedType"])
+        processed_table = processed_table.drop('WeedType',axis=1)
+
+        processed_table["Species"] = processed_table["Species"].fillna(processed_table["CoverCropSpecies"])
+        processed_table = processed_table.drop('CoverCropSpecies',axis=1)
+
+        processed_table["Species"] = processed_table["Species"].fillna(processed_table["CropType_01"])
+        processed_table = processed_table.drop('CropType_01',axis=1)
+
+        processed_table["Species"] = processed_table["Species"].fillna(processed_table["CropType_02"])
+        processed_table = processed_table.drop('CropType_02',axis=1)
+
+        # Create Height Column
+        processed_table["Height"] = None
+        processed_table["Height"] = processed_table["Height"].fillna(processed_table["Height_01"])
+        processed_table = processed_table.drop('Height_01',axis=1)
+
+        processed_table["Height"] = processed_table["Height"].fillna(processed_table["Height_02"])
+        processed_table = processed_table.drop('Height_02',axis=1)
+
+        # Create SizeClass Column
+        processed_table["SizeClass"] = None
+        processed_table["SizeClass"] = processed_table["SizeClass"].fillna(processed_table["SizeClass_01"])
+        processed_table = processed_table.drop('SizeClass_01',axis=1)
+
+        processed_table["SizeClass"] = processed_table["SizeClass"].fillna(processed_table["SizeClass_02"])
+        processed_table = processed_table.drop('SizeClass_02',axis=1)
+
+        processed_table["SizeClass"] = processed_table["SizeClass"].replace({'Large': 'LARGE','Medium': 'MEDIUM','Small':'SMALL'})
         csv_path = Path(self.processed_tables_dir, self.wirmergedtable_fname)
         processed_table.to_csv(csv_path)
 
