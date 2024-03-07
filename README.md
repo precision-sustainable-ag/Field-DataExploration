@@ -33,7 +33,7 @@ After installing Conda, you can set up an environment for this project using an 
 3. Locate the `environment.yaml` file in the repository. This file contains the list of packages needed for the project.
 4. Create a new Conda environment by running the following command:
    ```bash
-   conda env create -f environment.yml
+   conda env create -f environment.yaml
    ```
    This command reads the `environment.yaml` file and creates an environment with the name and dependencies specified within it.
 
@@ -51,7 +51,11 @@ With the environment set up and activated, you can run the scripts provided in t
    ```
    conda activate field
    ```
-2. Setup the pipeline in the main [config](conf/config.yaml#L11). To run a script, use the following command syntax:
+2. To run a script, use the following command syntax:
+   ```bash
+   sh run_volume_assessment.sh
+   ```
+3. [NOTE] Setup the pipeline in the main [config](conf/config.yaml#L11). To run a script, use the following command syntax:
    ```bash
    python FIELD_REPORT.py
    ```
