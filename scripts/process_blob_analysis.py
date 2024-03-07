@@ -10,9 +10,9 @@ import logging
 from utils.utils import read_csv_as_df
 log = logging.getLogger(__name__)
 """
-    Execute this script : python FIELD_REPORT.py general.task=process_blob_analysis
+    Execute this script : python FIELD_REPORT.py general.task=[process_blob_analysis]
 """
-class TablePreProcessing:
+class BlobTablePreProcessing:
     """
     A class designed to pre-process wirimagerefs.csv and weedsimagerepo_blob_metrics.csv.
 
@@ -32,19 +32,15 @@ class TablePreProcessing:
 
         blob_fname = "weedsimagerepo_blob_metrics.csv"
         table_fname = "wirimagerefs_table_metrics.csv"
-        self.processed_blob_ref_fname = 'merged_blobs_refs.csv'
+        self.processed_blob_ref_fname = 'merged_blobs_tables_metadata.csv'
         self.missing_blob_fname = 'missing_blobs_metadata.csv'
         self.blob_table_dir = cfg.data.blobsdir
         self.refs_table_dir = cfg.data.tablesdir
         self.processed_datadir = cfg.data.processed_datadir
         Path(self.processed_datadir).mkdir(exist_ok=True, parents=True)
         self.blobs_csv = read_csv_as_df(os.path.join(self.blob_table_dir,blob_fname))
-        # removing index
-        del self.blobs_csv[self.blobs_csv.columns[0]]
 
         self.imagerefs_csv = read_csv_as_df(os.path.join(self.refs_table_dir,table_fname))
-        # removing index
-        del self.imagerefs_csv[self.imagerefs_csv.columns[0]]
         # Update original imagerefs table
         self.preprocess_imgrefs(self.blobs_csv,self.imagerefs_csv)
   
@@ -59,20 +55,21 @@ class TablePreProcessing:
         missing_rows = missing_rows.dropna(axis=1, how='all')
         # remove values with missing MasterRefID
         processed_blobs = processed_blobs[processed_blobs['MasterRefID'].notna()]
-        
+        # removing RowKey from merged csv
+        processed_blobs = processed_blobs.drop('RowKey',axis=1)
         if processed_blobs.empty:
             log.error(f"processed_blobs df is empty, Not saving!")
         else:
             # Save to csv
             csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
-            processed_blobs.to_csv(csv_path)
+            processed_blobs.to_csv(csv_path, index=False)
             log.info(f"Exported processed_blobs to {csv_path}.")
             csv_path = Path(self.processed_datadir, self.missing_blob_fname)
-            missing_rows.to_csv(csv_path)
+            missing_rows.to_csv(csv_path, index=False)
             log.info(f"Exported missing_rows to {csv_path}.")
             
 
 def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
-    exporter = TablePreProcessing(cfg)
+    exporter = BlobTablePreProcessing(cfg)
     log.info(f"{cfg.general.task} completed.")

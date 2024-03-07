@@ -6,6 +6,7 @@ from azure.core.credentials import AzureSasCredential
 from azure.data.tables import TableServiceClient
 from omegaconf import DictConfig
 from tqdm import tqdm
+
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class TableExporter:
                 df_images_details = pd.DataFrame(table_data)
                 # Export to CSV
                 csv_path = Path(self.tables_dir, f"{table_name}_table_metrics.csv")
-                df_images_details.to_csv(csv_path)
+                df_images_details.to_csv(csv_path, index=False)
                 log.info(f"Exported {table_name} data to {csv_path}")
             else:
                 log.warn(f"{table_name} data is empty, Not saving!")

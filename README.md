@@ -51,7 +51,7 @@ With the environment set up and activated, you can run the scripts provided in t
    ```
    conda activate field
    ```
-2. Run Volume Assessment: This command fetches data from blob container and tables, and stores them as csv files.
+2. To run a script, use the following command syntax:
    ```bash
    sh run_volume_assessment.sh
    ```
