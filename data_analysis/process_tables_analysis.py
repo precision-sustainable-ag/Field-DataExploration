@@ -85,9 +85,7 @@ class WIRTablesPreProcessing:
         processed_table["Species"] = processed_table["Species"].fillna(processed_table["CropType_01"])
         processed_table = processed_table.drop('CropType_01',axis=1)
 
-        processed_table["Species"] = processed_table["Species"].fillna(processed_table["CropType_02"])
-        processed_table = processed_table.drop('CropType_02',axis=1)
-
+        processed_table.rename(columns={"CropType_02": "CropTypeSecondary"},inplace=True)
         # Create Height Column
         processed_table["Height"] = None
         processed_table["Height"] = processed_table["Height"].fillna(processed_table["Height_01"])
