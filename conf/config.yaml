@@ -14,7 +14,7 @@ pipeline:
     # - process_blob_analysis
     # - process_tables_analysis
     # - plot_raw_images
-    - curate_image_json
+    - metadata_formatter
 
 general:
   task: # Leave empty as placeholder
