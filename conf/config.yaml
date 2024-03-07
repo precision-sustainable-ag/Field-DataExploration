@@ -13,7 +13,6 @@ pipeline:
     # - wir_blob_data_generator
     # - process_blob_analysis
     # - process_tables_analysis
-    # - plot_raw_images
     - metadata_formatter
 
 general:

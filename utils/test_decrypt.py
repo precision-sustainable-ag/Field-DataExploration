@@ -4,7 +4,7 @@ from pathlib import Path
 from utils.data_anonymizer import DataAnonymizer
 
 # Specify the path to the encryption key file
-keypath = "keys/authorized_keys.yaml"
+keypath = "../keys/authorized_keys.yaml"
 
 # Initialize the DataAnonymizer with the specified key file
 anonymizer = DataAnonymizer(keypath)
@@ -40,4 +40,4 @@ def decrypt_usernames_in_json_files(folder_path: str) -> None:
             # If you need to update the file or perform further actions, do so here
 
 
-decrypt_usernames_in_json_files("tempdata/new_json_data")
+decrypt_usernames_in_json_files("../tempdata/new_json_data")
