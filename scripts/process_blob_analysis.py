@@ -39,12 +39,8 @@ class BlobTablePreProcessing:
         self.processed_datadir = cfg.data.processed_datadir
         Path(self.processed_datadir).mkdir(exist_ok=True, parents=True)
         self.blobs_csv = read_csv_as_df(os.path.join(self.blob_table_dir,blob_fname))
-        # removing index
-        del self.blobs_csv[self.blobs_csv.columns[0]]
 
         self.imagerefs_csv = read_csv_as_df(os.path.join(self.refs_table_dir,table_fname))
-        # removing index
-        del self.imagerefs_csv[self.imagerefs_csv.columns[0]]
         # Update original imagerefs table
         self.preprocess_imgrefs(self.blobs_csv,self.imagerefs_csv)
   
@@ -66,10 +62,10 @@ class BlobTablePreProcessing:
         else:
             # Save to csv
             csv_path = Path(self.processed_datadir, self.processed_blob_ref_fname)
-            processed_blobs.to_csv(csv_path)
+            processed_blobs.to_csv(csv_path, index=False)
             log.info(f"Exported processed_blobs to {csv_path}.")
             csv_path = Path(self.processed_datadir, self.missing_blob_fname)
-            missing_rows.to_csv(csv_path)
+            missing_rows.to_csv(csv_path, index=False)
             log.info(f"Exported missing_rows to {csv_path}.")
             
 

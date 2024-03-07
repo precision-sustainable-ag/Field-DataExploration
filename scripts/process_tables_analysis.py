@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-import os, sys
+# fmt: off
+# isort: off
+import os
 from omegaconf import DictConfig
 from pathlib import Path
 import pandas as pd
@@ -8,7 +10,6 @@ import logging
 from utils.utils import read_csv_as_df
 log = logging.getLogger(__name__)
 
-from process_blob_analysis import BlobTablePreProcessing
 """
     Execute this script : python FIELD_REPORT.py general.task=[process_tables_analysis]
 """
@@ -36,20 +37,16 @@ class WIRTablesPreProcessing:
 
         ## get csv data 
         self.wircovercropsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wircovercropsmeta_fname))
-        del self.wircovercropsmeta_df[self.wircovercropsmeta_df.columns[0]]
         self.wircovercropsmeta_df = self.wircovercropsmeta_df.drop(['RowKey',"PartitionKey","Affiliation"],axis=1)
 
         self.wircropsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wircropsmeta_fname))
-        del self.wircropsmeta_df[self.wircropsmeta_df.columns[0]]
         self.wircropsmeta_df = self.wircropsmeta_df.drop('RowKey',axis=1)
         # [Q: Check CropTypr for N/A values? fill nan if not required ]
 
         self.wirweedsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wirweedsmeta_fname))
-        del self.wirweedsmeta_df[self.wirweedsmeta_df.columns[0]]
         self.wirweedsmeta_df = self.wirweedsmeta_df.drop('RowKey',axis=1)
 
         self.wirmastermeta_df = read_csv_as_df(os.path.join(self.tables_dir,wirmastermeta_fname))
-        del self.wirmastermeta_df[self.wirmastermeta_df.columns[0]]
         self.wirmastermeta_df.rename(columns={"RowKey": "MasterRefID"},inplace=True)
         self.wirmastermeta_df = self.wirmastermeta_df.drop('WeedsOrCrops',axis=1)
 
@@ -57,7 +54,6 @@ class WIRTablesPreProcessing:
         self.processed_tables_dir = cfg.data.processed_datadir
         self.wirmergedtable_fname = "merged_blobs_tables_metadata.csv"
         self.wirmergedtable_df = read_csv_as_df(os.path.join(self.processed_tables_dir,self.wirmergedtable_fname))
-        del self.wirmergedtable_df[self.wirmergedtable_df.columns[0]]
 
         self.process_wir_tables()
 
@@ -104,7 +100,7 @@ class WIRTablesPreProcessing:
 
         processed_table["SizeClass"] = processed_table["SizeClass"].replace({'Large': 'LARGE','Medium': 'MEDIUM','Small':'SMALL',"3": "LARGE", "2": "MEDIUM", "1": "SMALL"})
         csv_path = Path(self.processed_tables_dir, self.wirmergedtable_fname)
-        processed_table.to_csv(csv_path)
+        processed_table.to_csv(csv_path, index=False)
 
 def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
