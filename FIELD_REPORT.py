@@ -9,7 +9,7 @@ from omegaconf import DictConfig, OmegaConf
 
 sys.path.append("volume_assessment")
 sys.path.append("data_analysis")
-
+sys.path.append("image_metadata")
 log = logging.getLogger(__name__)
 # Get the logger for the Azure SDK
 azlogger = logging.getLogger("azure")

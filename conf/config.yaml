@@ -9,11 +9,12 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    - wir_table_generator
-    - wir_blob_data_generator
-    - process_blob_analysis
-    - process_tables_analysis
-    - plot_raw_images
+    # - wir_table_generator
+    # - wir_blob_data_generator
+    # - process_blob_analysis
+    # - process_tables_analysis
+    # - plot_raw_images
+    - curate_image_json
 
 general:
   task: # Leave empty as placeholder
@@ -26,6 +27,11 @@ data:
   tablesdir: ${data.datadir}/tables/${job.job_now_date}
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
   processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
+
+temp:
+  temp_json_data: ${general.workdir}/tempdata/new_json_data
+  temp_jpegs_data: ${general.workdir}/tempdata/jpeg_data
+  final_json_dir: ${general.workdir}/tempdata/final_jsons
 
 report:
   reportdir: ${general.workdir}/report

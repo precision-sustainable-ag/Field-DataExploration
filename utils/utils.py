@@ -1,11 +1,15 @@
 import os
 from datetime import datetime
+from pathlib import Path
 
+import exifread
 import pandas as pd
+import requests
 import yaml
 
 
-def read_yaml(path):
+def read_yaml(path: str) -> dict:
+    """Reads a YAML file and returns its content as a dictionary."""
     try:
         with open(path, "r") as file:
             data = yaml.safe_load(file)
@@ -14,7 +18,8 @@ def read_yaml(path):
         raise FileNotFoundError(f"File does not exist : {path}")
 
 
-def read_csv_as_df(path):
+def read_csv_as_df(path: str) -> pd.DataFrame:
+    """Reads a CSV file into a pandas DataFrame."""
     try:
         csv_reader = pd.read_csv(path)
         # Return as dataframe
@@ -23,16 +28,9 @@ def read_csv_as_df(path):
         raise FileNotFoundError(f"File does not exist : {path}")
 
 
-def find_most_recent_csv(main_directory_path, csv_filename):
+def find_most_recent_csv(main_directory_path: str, csv_filename: str) -> str | None:
     """
     Finds the most recent CSV file based on the subfolder names which are dates.
-
-    Parameters:
-    - main_directory_path: str, the path to the main directory containing dated subfolders.
-    - csv_filename: str, the filename of the CSV files contained in each subfolder.
-
-    Returns:
-    - The path to the most recent CSV file, or None if no valid subfolders or CSV file is found.
     """
     # List all items in the main directory
     all_items = os.listdir(main_directory_path)
@@ -66,3 +64,49 @@ def find_most_recent_csv(main_directory_path, csv_filename):
         return most_recent_csv_path
 
     return None
+
+
+def get_exif_data(image_path: str) -> dict:
+    """Extracts EXIF data from an image file and returns it as a dictionary."""
+    with open(image_path, "rb") as f:
+        tags = exifread.process_file(f)
+        if tags:
+            exif = {}
+            for k, v in tags.items():
+                if k not in (
+                    "JPEGThumbnail",
+                    "TIFFThumbnail",
+                    "Filename",
+                    "EXIF MakerNote",
+                ):
+                    if isinstance(v, (int, float)):
+                        # Integers and floats are left as is
+                        value = v
+                    else:
+                        # Convert other types to string as a general case
+                        value = str(v)
+                    if "Thumbnail" in k:
+                        continue
+                    exif[k] = value
+        else:
+            exif = {}
+    return exif
+
+
+def download_from_url(image_url: str, savedir: str = ".") -> None:
+    """Downloads an image from a URL and saves it to the specified directory."""
+    if not Path(savedir).exists():
+        Path(savedir).mkdir(exist_ok=True, parents=True)
+    fname = Path(image_url).name
+    fpath = Path(savedir, fname)
+    # Send a GET request to the image URL
+    response = requests.get(image_url)
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Open a file in binary write mode
+        with open(fpath, "wb") as file:
+            # Write the content of the response to the file
+            file.write(response.content)
+    else:
+        print(f"Failed to download image from {image_url}")
