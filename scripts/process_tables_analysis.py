@@ -99,6 +99,9 @@ class WIRTablesPreProcessing:
         processed_table = processed_table.drop('SizeClass_02',axis=1)
 
         processed_table["SizeClass"] = processed_table["SizeClass"].replace({'Large': 'LARGE','Medium': 'MEDIUM','Small':'SMALL',"3": "LARGE", "2": "MEDIUM", "1": "SMALL"})
+        
+        processed_table.drop_duplicates(subset="name", inplace=True)
+        
         csv_path = Path(self.processed_tables_dir, self.wirmergedtable_fname)
         processed_table.to_csv(csv_path, index=False)
 
