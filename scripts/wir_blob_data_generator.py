@@ -6,7 +6,6 @@ import pandas as pd
 from azure.storage.blob import BlobServiceClient
 from omegaconf import DictConfig
 from tqdm import tqdm
-
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)

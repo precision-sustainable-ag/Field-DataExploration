@@ -7,6 +7,8 @@ import pandas as pd
 import requests
 import yaml
 
+from utils.metadata_dataclass import CameraInfo
+
 
 def read_yaml(path: str) -> dict:
     """Reads a YAML file and returns its content as a dictionary."""

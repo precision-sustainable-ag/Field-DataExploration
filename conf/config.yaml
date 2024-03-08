@@ -28,7 +28,7 @@ data:
   processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
 
 temp:
-  temp_json_data: ${general.workdir}/tempdata/new_json_data
+  temp_json_data: ${general.workdir}/tempdata/json_data
   temp_jpegs_data: ${general.workdir}/tempdata/jpeg_data
   final_json_dir: ${general.workdir}/tempdata/final_jsons
 

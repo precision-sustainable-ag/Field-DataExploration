@@ -81,7 +81,9 @@ class WIRTablesPreProcessing:
         processed_table["Species"] = processed_table["Species"].fillna(processed_table["CropType_01"])
         processed_table = processed_table.drop('CropType_01',axis=1)
 
+        # Create secondary croptype column
         processed_table.rename(columns={"CropType_02": "CropTypeSecondary"},inplace=True)
+        
         # Create Height Column
         processed_table["Height"] = None
         processed_table["Height"] = processed_table["Height"].fillna(processed_table["Height_01"])
@@ -100,7 +102,43 @@ class WIRTablesPreProcessing:
 
         processed_table["SizeClass"] = processed_table["SizeClass"].replace({'Large': 'LARGE','Medium': 'MEDIUM','Small':'SMALL',"3": "LARGE", "2": "MEDIUM", "1": "SMALL"})
         
+        # Create FlowerFruitOrSeeds column
+        processed_table["FlowerFruitOrSeeds"] = None
+        processed_table["FlowerFruitOrSeeds"] = processed_table["FlowerFruitOrSeeds"].fillna(processed_table["FlowerFruitOrSeeds_01"])
+        processed_table = processed_table.drop('FlowerFruitOrSeeds_01',axis=1)
+
+        processed_table["FlowerFruitOrSeeds"] = processed_table["FlowerFruitOrSeeds"].fillna(processed_table["FlowerFruitOrSeeds_02"])
+        processed_table = processed_table.drop('FlowerFruitOrSeeds_02',axis=1)
+
+        #Rename creation time column
+        processed_table.rename(columns={"creation_time_utc": "UploadDateTimeUTC"},inplace=True)
+
+        #Rename memory column
+        processed_table.rename(columns={"memory_mb": "SizeMiB"},inplace=True)
+
+        # Drop repetitive "container" column
+        processed_table = processed_table.drop('container',axis=1)
+
+        # Drop repetitive "container" column
+        processed_table = processed_table.drop('PartitionKey',axis=1)
+
+
+        # Drop duplicates based on name
         processed_table.drop_duplicates(subset="name", inplace=True)
+
+        processed_table["BaseName"] = processed_table["name"].str.rsplit(".", n=1).str[0]
+        processed_table["Extension"] = processed_table["name"].str.split(".", n=1).str[-1]
+        processed_table["Extension"] = processed_table["Extension"].str.lower()
+        filtered_df = processed_table[processed_table["Extension"].isin(["jpg", "arw"])]
+        matches = filtered_df.groupby("BaseName")["Extension"].apply(
+            lambda x: "jpg" in x.values and "arw" in x.values
+        )
+        matches_df = matches.reset_index().rename(columns={"Extension": "HasMatchingJpgAndRaw"})
+        processed_table = pd.merge(processed_table, matches_df, on="BaseName", how="left")
+
+        # Capitalize columns
+        capitalized_column_names = [name if name[0].isupper() and not name[1:].islower() else name.capitalize() for name in processed_table.columns]
+        processed_table.columns = capitalized_column_names
         
         csv_path = Path(self.processed_tables_dir, self.wirmergedtable_fname)
         processed_table.to_csv(csv_path, index=False)
