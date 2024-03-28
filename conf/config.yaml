@@ -9,11 +9,11 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    # - wir_table_generator
-    # - wir_blob_data_generator
-    # - process_blob_analysis
-    # - process_tables_analysis
-    - metadata_formatter
+    - wir_table_generator
+    - wir_blob_data_generator
+    - process_blob_analysis
+    - process_tables_analysis
+    # - metadata_formatter
 
 general:
   task: # Leave empty as placeholder
@@ -41,6 +41,6 @@ logs:
 
 job:
   job_now_date: &nowdir ${now:%Y-%m-%d}
-  job_now_time: ${now:%H:%M:%S}
+  job_now_time: ${now:%H_%M_%S}
   job_now: ${job.job_now_date}/${job.job_now_time} 
   jobdir: ${data.datadir}/${job.job_now}
