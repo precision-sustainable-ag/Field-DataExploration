@@ -23,7 +23,7 @@ def read_yaml(path: str) -> dict:
 def read_csv_as_df(path: str) -> pd.DataFrame:
     """Reads a CSV file into a pandas DataFrame."""
     try:
-        csv_reader = pd.read_csv(path)
+        csv_reader = pd.read_csv(path, low_memory=False)
         # Return as dataframe
         return csv_reader
     except Exception as e:

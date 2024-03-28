@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from omegaconf import DictConfig
 from tqdm import tqdm
+
 from utils.metadata_dataclass import CameraInfo, FieldMetadata
 from utils.utils import find_most_recent_csv, get_exif_data, read_csv_as_df
 
@@ -54,7 +55,7 @@ class ImageMetadataProcessor:
 
     def process_images(self):
         """Processes each image, extracting and saving its metadata as JSON."""
-        for i, row in tqdm(self.df.iterrows(), total=len(self.df)):
+        for _, row in tqdm(self.df.iterrows(), total=len(self.df)):
             self.clean_row_data(row)
             jpeg_path = self.imgdir / row["Name"]
             if not jpeg_path.exists():
@@ -77,7 +78,7 @@ class ImageMetadataProcessor:
         """Saves the field metadata as JSON."""
         json_path = self.jsondir / (Path(name).stem + ".json")
         with open(json_path, "w") as f:
-            json.dump(asdict(fmetadata), f, indent=4, allow_nan=False, default=str)
+            json.dump(asdict(fmetadata), f, indent=4, default=str)
 
 
 class MetadataCSVConverter:
@@ -90,7 +91,7 @@ class MetadataCSVConverter:
     def convert_json_to_csv(self):
         """Converts JSON metadata files into a single CSV file."""
         rows = []
-        for path in self.jsondir.glob("*"):
+        for path in self.jsondir.glob("*.json"):
             with open(path, "r") as f:
                 data = json.load(f)
                 data = UnnestedDict.unnest(data)

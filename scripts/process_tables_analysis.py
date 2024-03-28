@@ -126,6 +126,7 @@ class WIRTablesPreProcessing:
         # Drop duplicates based on name
         processed_table.drop_duplicates(subset="name", inplace=True)
 
+        # Find if JPG has matching RAW
         processed_table["BaseName"] = processed_table["name"].str.rsplit(".", n=1).str[0]
         processed_table["Extension"] = processed_table["name"].str.split(".", n=1).str[-1]
         processed_table["Extension"] = processed_table["Extension"].str.lower()
@@ -134,11 +135,18 @@ class WIRTablesPreProcessing:
             lambda x: "jpg" in x.values and "arw" in x.values
         )
         matches_df = matches.reset_index().rename(columns={"Extension": "HasMatchingJpgAndRaw"})
+        matches_df['HasMatchingJpgAndRaw'] = matches_df['HasMatchingJpgAndRaw'].fillna(False)
+
         processed_table = pd.merge(processed_table, matches_df, on="BaseName", how="left")
 
         # Capitalize columns
         capitalized_column_names = [name if name[0].isupper() and not name[1:].islower() else name.capitalize() for name in processed_table.columns]
         processed_table.columns = capitalized_column_names
+
+        # Rename Species Values
+        processed_table['Species'] = processed_table['Species'].str.lower()
+
+
         
         csv_path = Path(self.processed_tables_dir, self.wirmergedtable_fname)
         processed_table.to_csv(csv_path, index=False)
