@@ -13,7 +13,7 @@ pipeline:
     - wir_blob_data_generator
     - process_blob_analysis
     - process_tables_analysis
-    # - metadata_formatter
+    - find_missing_batch_folders
 
 general:
   task: # Leave empty as placeholder
@@ -35,6 +35,7 @@ temp:
 report:
   reportdir: ${general.workdir}/report
   report_plots: ${report.reportdir}/${job.job_now_date}/plots
+  missing_batch_folders: ${data.processed_datadir}/missing_field-batches_folders.txt
   
 logs:
   logdir: ${general.workdir}/logging
