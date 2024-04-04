@@ -13,7 +13,7 @@ from pydantic.dataclasses import dataclass
 
 
 @dataclass
-class CameraInfo:
+class CameraExifInfo:
     """A dataclass representing camera information extracted from Field camera exif metadata."""
 
     Make: str
@@ -132,6 +132,11 @@ class CameraInfo:
 
 
 @dataclass
+class CutoutInfo:
+    pass
+
+
+@dataclass
 class FieldMetadata:
     """A dataclass representing metadata for a Field images."""
 
@@ -155,4 +160,5 @@ class FieldMetadata:
     SizeClass: str | None
     FlowerFruitOrSeeds: bool | None
     HasMatchingJpgAndRaw: bool | None
-    CameraInfo: CameraInfo
+    CameraExifInfo: CameraExifInfo
+    CutoutInfo: CutoutInfo
