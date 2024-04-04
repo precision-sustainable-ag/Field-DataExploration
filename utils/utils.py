@@ -1,4 +1,5 @@
 import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -112,3 +113,41 @@ def download_from_url(image_url: str, savedir: str = ".") -> None:
             file.write(response.content)
     else:
         print(f"Failed to download image from {image_url}")
+
+
+def azcopy_list(url, read_keys, tempoutput):
+    azlist_src = url + read_keys
+    command = f'azcopy list "{azlist_src}" > {tempoutput}'
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    # Check if the command was executed successfully
+    if result.returncode != 0:
+        print("Copy unsuccessful")
+        print(result.stdout)
+
+
+def download_azcopy(azuresrc, localdest):
+    command = f'azcopy cp "{azuresrc}" "{localdest}"'
+
+    # result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    # Check if the command was executed successfully
+    if result.returncode == 0:
+        print("Copy successful")
+        print(result.stdout)
+    else:
+        print("Error in copy operation")
+        print(result.stderr)
+
+
+def upload_azcopy(localdest, azuredst):
+    command = f'azcopy cp "{localdest}" "{azuredst}"'
+
+    # result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    # Check if the command was executed successfully
+    if result.returncode == 0:
+        print("Copy successful")
+        print(result.stdout)
+    else:
+        print("Error in copy operation")
+        print(result.stderr)
