@@ -4,6 +4,10 @@ blobs:
   weedsimagerepo:
     url: ""
     sas_token: ""
+  
+  field-batches:
+    read_sas_token:
+    url:
 
 tables:
   wirmastermeta:
