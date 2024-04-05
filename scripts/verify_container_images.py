@@ -1,6 +1,8 @@
+import concurrent.futures
 import logging
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
@@ -53,8 +55,9 @@ class WeedsImageRepoDataProcessor(DataProcessor):
         
         super().__init__(cfg)
         
-        datadir = Path(cfg.data.datadir, "processed_tables")
-        self.csv_path = Path(find_most_recent_csv(datadir, "merged_blobs_tables_metadata.csv"))
+        self.datadir = Path(cfg.data.datadir, "processed_tables")
+        self.check_for_updated_file()
+        self.csv_path = Path(find_most_recent_csv(self.datadir, "merged_blobs_tables_metadata.csv"))
         self.updated_csv_path = Path(self.csv_path.parent, "merged_blobs_tables_metadata_updated_CameraDateTime.csv")
         self.keys = cfg.pipeline_keys
         self.df = self.read_and_preprocess(self.csv_path)
@@ -63,6 +66,13 @@ class WeedsImageRepoDataProcessor(DataProcessor):
         self.local_destination.mkdir(exist_ok=True, parents=True)
 
         log.info("WeedsImageRepoDataProcessor initialized successfully.")
+
+    def check_for_updated_file(self):
+        path = find_most_recent_csv(self.datadir,"merged_blobs_tables_metadata_updated_CameraDateTime.csv")
+        if Path(path).exists():
+            log.critical("Exif data has alread been updated. Updated csv file already exists in the most up-to-date folder. Exiting.")
+            exit(1)
+            
 
     def config_keys(self):
         # Configures keys from YAML configuration.
@@ -119,16 +129,35 @@ class WeedsImageRepoDataProcessor(DataProcessor):
     
 
     def update_dataframe_with_exif_data(self, missing_jpgs_df: pd.DataFrame) -> None:
-        # Updates the DataFrame with EXIF DateTimeOriginal data for the specified missing JPGs.
         log.info("Updating DataFrame with EXIF DateTimeOriginal data.")
-        for _, row in missing_jpgs_df.iterrows():
+
+        def update_row(row):
             try:
-                # self.download_jpgs(row)
                 exif_datetime = self.extract_exifdatetime(row)
-                self.df.loc[self.df["ImageURL"] == row["ImageURL"], "CameraInfo_DateTime"] = exif_datetime
-                log.info("EXIF data updated for image: %s", row["ImageURL"])
+                return row["ImageURL"], exif_datetime
             except Exception as e:
                 log.error("Failed to update EXIF data for image %s: %s", row["ImageURL"], e, exc_info=True)
+                return row["ImageURL"], None
+        max_workers = int(len(os.sched_getaffinity(0)) / 3)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(update_row, row) for _, row in missing_jpgs_df.iterrows()]
+            for future in concurrent.futures.as_completed(futures):
+                img_url, exif_datetime = future.result()
+                if exif_datetime:
+                    self.df.loc[self.df["ImageURL"] == img_url, "CameraInfo_DateTime"] = exif_datetime
+                    log.info("EXIF data updated for image: %s", img_url)
+
+    # def update_dataframe_with_exif_data(self, missing_jpgs_df: pd.DataFrame) -> None:
+    #     # Updates the DataFrame with EXIF DateTimeOriginal data for the specified missing JPGs.
+    #     log.info("Updating DataFrame with EXIF DateTimeOriginal data.")
+    #     for _, row in missing_jpgs_df.iterrows():
+    #         try:
+    #             # self.download_jpgs(row)
+    #             exif_datetime = self.extract_exifdatetime(row)
+    #             self.df.loc[self.df["ImageURL"] == row["ImageURL"], "CameraInfo_DateTime"] = exif_datetime
+    #             log.info("EXIF data updated for image: %s", row["ImageURL"])
+    #         except Exception as e:
+    #             log.error("Failed to update EXIF data for image %s: %s", row["ImageURL"], e, exc_info=True)
 
 
     def save_updated_dataframe(self) -> None:
