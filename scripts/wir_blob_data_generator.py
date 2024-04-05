@@ -6,6 +6,7 @@ import pandas as pd
 from azure.storage.blob import BlobServiceClient
 from omegaconf import DictConfig
 from tqdm import tqdm
+
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)
@@ -66,27 +67,24 @@ class BlobMetricExporter:
 
             log.exception(f"Error! Check {container_name} authorization parameters")
 
-    def get_blob_csv(self):
-        for container_name in tqdm(self.__auth_config_data["blobs"]):
-            sas_token = self.__auth_config_data["blobs"][container_name]["sas_token"]
-            account_url = self.__auth_config_data["blobs"][container_name]["url"]
+    def get_blob_csv(self, container_name="weedsimagerepo"):
+        sas_token = self.__auth_config_data["blobs"][container_name]["sas_token"]
+        account_url = self.__auth_config_data["blobs"][container_name]["url"]
 
-            # Get data from Blob servers
-            images_details = self.get_blob_metrics(
-                account_url, sas_token, container_name
-            )
-            if images_details:
-                df_images_details = pd.DataFrame(images_details)
-                # Export to CSV
-                csv_path = Path(self.blobs_dir, f"{container_name}_blob_metrics.csv")
-                df_images_details.to_csv(csv_path, index=False)
-                log.info(f"Exported {container_name} data to {csv_path}")
-            else:
-                log.warn(f"{container_name} data is empty, Not saving!")
+        # Get data from Blob servers
+        images_details = self.get_blob_metrics(account_url, sas_token, container_name)
+        if images_details:
+            df_images_details = pd.DataFrame(images_details)
+            # Export to CSV
+            csv_path = Path(self.blobs_dir, f"{container_name}_blob_metrics.csv")
+            df_images_details.to_csv(csv_path, index=False)
+            log.info(f"Exported {container_name} data to {csv_path}")
+        else:
+            log.warn(f"{container_name} data is empty, Not saving!")
 
 
 def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
     exporter = BlobMetricExporter(cfg)
-    exporter.get_blob_csv()
+    exporter.get_blob_csv(container_name="weedsimagerepo")
     log.info(f"{cfg.general.task} completed.")
