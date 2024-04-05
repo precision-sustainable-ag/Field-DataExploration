@@ -22,6 +22,16 @@ log = logging.getLogger(__name__)
 
 
 class ReportWriter:
+    """
+    Provides functionality for writing a list of stems (unique identifiers for images) to a file.
+
+    Methods:
+    --------
+    write_stems(stems, output_file_path: str) -> None:
+        Writes the provided list of stems to the specified file path. Each stem is written on a new line.
+
+    This class is intended to be used where a simple utility is needed to output stems to a file, often for logging or tracking purposes.
+    """
 
     @staticmethod
     def write_stems(stems, output_file_path: str) -> None:
@@ -39,6 +49,18 @@ class ReportWriter:
 
 
 class DataProcessor:
+    """
+    Base class for data processing, providing a structure for subclasses that implement specific data processing tasks.
+
+    read_and_preprocess(csv_path: Path) -> pd.DataFrame:
+        Abstract method for reading and preprocessing data from a CSV file. Must be implemented by subclasses.
+
+    download_jpgs(imgurl: str):
+        Abstract method for downloading JPG images. Must be implemented by subclasses.
+
+    The DataProcessor class serves as a foundation for building specific data processing functionalities that share common configuration handling but require different processing implementations.
+    """
+
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
 
@@ -50,6 +72,19 @@ class DataProcessor:
 
 
 class WeedsImageRepoDataProcessor(DataProcessor):
+    """
+    Processes data specific to the Weeds Image Repository, including reading and preprocessing CSV data, extracting stem lists, and downloading JPG images.
+
+    Attributes:
+    -----------
+    Inherits all attributes from the DataProcessor class and introduces additional ones for handling Weeds Image Repository specific data processing tasks.
+
+    Methods:
+    --------
+    Inherits methods from DataProcessor and overrides `read_and_preprocess` and `download_jpgs` with specific implementations. It also adds methods for extracting EXIF data, updating dataframes with this data, and saving the updated dataframe.
+
+    """
+
     # fmt: off
     def __init__(self, cfg: DictConfig):
         
@@ -170,6 +205,20 @@ class WeedsImageRepoDataProcessor(DataProcessor):
 
 
 class FieldBatchesDataProcessor(DataProcessor):
+    """
+    Processes field batch data by listing blob (field-batches) contents and extracting raw stems from the data.
+
+    Methods:
+    --------
+    list_blob_contents() -> None:
+        Lists the contents of a blob storage, logging the output to a specified file path.
+
+    get_raw_stems(file_path: Path) -> Set[str]:
+        Extracts and returns a set of raw stems from the listed blob contents.
+
+    The FieldBatchesDataProcessor class is focused on processing data related to field batches, specifically in the context of managing and analyzing data stored in blob storage. It provides tools for listing storage contents and extracting relevant information for further processing.
+    """
+
     # Processes field batch data.
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
