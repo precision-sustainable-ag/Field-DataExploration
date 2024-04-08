@@ -87,7 +87,6 @@ class BlobStorageHandler:
             log.info("Successfully analyzed and organized folders.")
             return organized_batches
         finally:
-            os.remove(self.file_path)
             log.info("Temporary file %s removed.", self.file_path)
 
 

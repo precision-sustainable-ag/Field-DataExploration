@@ -31,6 +31,23 @@ def read_csv_as_df(path: str) -> pd.DataFrame:
         raise FileNotFoundError(f"File does not exist : {path}")
 
 
+def find_file_in_subdirectories(directory, filename):
+    """
+    Searches for a file within a directory and all its subdirectories.
+
+    Parameters:
+    - directory: The starting directory path where the search begins.
+    - filename: The name of the file to search for.
+
+    Returns:
+    - The path to the first instance of the file if found, otherwise None.
+    """
+    for root, dirs, files in os.walk(directory):
+        if filename in files:
+            return os.path.join(root, filename)
+    return None
+
+
 def find_most_recent_csv(main_directory_path: str, csv_filename: str) -> str | None:
     """
     Finds the most recent CSV file based on the subfolder names which are dates.
