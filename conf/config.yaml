@@ -14,6 +14,8 @@ pipeline:
     - process_blob_analysis
     - process_tables_analysis
     - find_missing_batch_folders
+    - verify_container_images
+    # - list_batches
 
 general:
   task: # Leave empty as placeholder
