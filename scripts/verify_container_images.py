@@ -91,9 +91,8 @@ class WeedsImageRepoDataProcessor(DataProcessor):
         super().__init__(cfg)
         
         self.datadir = Path(cfg.data.datadir, "processed_tables")
-        self.check_for_updated_file()
         self.csv_path = Path(find_most_recent_csv(self.datadir, "merged_blobs_tables_metadata.csv"))
-        self.updated_csv_path = Path(self.csv_path.parent, "merged_blobs_tables_metadata_updated_CameraDateTime.csv")
+        self.updated_csv_path = self.csv_path
         self.keys = cfg.pipeline_keys
         self.df = self.read_and_preprocess(self.csv_path)
         self.config_keys()
@@ -101,12 +100,6 @@ class WeedsImageRepoDataProcessor(DataProcessor):
         self.local_destination.mkdir(exist_ok=True, parents=True)
 
         log.info("WeedsImageRepoDataProcessor initialized successfully.")
-
-    def check_for_updated_file(self):
-        path = find_most_recent_csv(self.datadir,"merged_blobs_tables_metadata_updated_CameraDateTime.csv")
-        if Path(path).exists():
-            log.critical("Exif data has alread been updated. Updated csv file already exists in the most up-to-date folder. Exiting.")
-            exit(1)
             
 
     def config_keys(self):
@@ -133,6 +126,7 @@ class WeedsImageRepoDataProcessor(DataProcessor):
     def get_missing_jpg(self, stem_list: Set[str]) -> pd.DataFrame:
         # Returns a DataFrame of JPGs missing from the specified stem list.
         missing_jpg_df = self.df.loc[self.df["Stem"].isin(stem_list) & (self.df["Extension"] == "jpg")]
+        self.df.drop(columns=["Stem"], inplace=True)
         log.info("%d missing JPGs identified.", len(missing_jpg_df))
         return missing_jpg_df
 
@@ -182,18 +176,6 @@ class WeedsImageRepoDataProcessor(DataProcessor):
                     self.df.loc[self.df["ImageURL"] == img_url, "CameraInfo_DateTime"] = exif_datetime
                     log.info("EXIF data updated for image: %s", img_url)
 
-    # def update_dataframe_with_exif_data(self, missing_jpgs_df: pd.DataFrame) -> None:
-    #     # Updates the DataFrame with EXIF DateTimeOriginal data for the specified missing JPGs.
-    #     log.info("Updating DataFrame with EXIF DateTimeOriginal data.")
-    #     for _, row in missing_jpgs_df.iterrows():
-    #         try:
-    #             # self.download_jpgs(row)
-    #             exif_datetime = self.extract_exifdatetime(row)
-    #             self.df.loc[self.df["ImageURL"] == row["ImageURL"], "CameraInfo_DateTime"] = exif_datetime
-    #             log.info("EXIF data updated for image: %s", row["ImageURL"])
-    #         except Exception as e:
-    #             log.error("Failed to update EXIF data for image %s: %s", row["ImageURL"], e, exc_info=True)
-
 
     def save_updated_dataframe(self) -> None:
         # Saves the updated DataFrame to a CSV file.
@@ -202,6 +184,21 @@ class WeedsImageRepoDataProcessor(DataProcessor):
             log.info("DataFrame saved successfully to %s.", self.updated_csv_path)
         except Exception as e:
             log.error("Failed to save DataFrame to %s: %s", self.updated_csv_path, e, exc_info=True)
+
+    def merge_batch_info(self, df):
+        # self.df['SubBatchIndex'] = self.df['SubBatchIndex'].astype(str) if 'SubBatchIndex' in self.df.columns else self.df['SubBatchIndex']
+        self.df.drop(
+            [
+                col
+                for col in self.df.columns
+                if ("SubBatchIndex" in col) or ("BatchID" in col)
+            ],
+            axis=1,
+            inplace=True,
+        )
+        df['SubBatchIndex'] = df['SubBatchIndex'].astype(str)
+        self.df = pd.merge(self.df, df, on="Name", how="left")
+        self.df['SubBatchIndex'] = self.df['SubBatchIndex'].astype(str)
 
 
 class FieldBatchesDataProcessor(DataProcessor):
@@ -241,15 +238,34 @@ class FieldBatchesDataProcessor(DataProcessor):
     def get_raw_stems(self, file_path: Path) -> Set[str]:
         # Extracts stems from the listed blob contents.
         stems = set()
-        with open(file_path, "r") as file:
+        with open(self.file_path, "r") as file:
             for line in file:
                 parts = line.split("/")
                 if len(parts) > 1 and "raws" in parts:
                     stem = parts[-1].split(".")[0]
                     stems.add(stem)
         log.info("%d raw stems identified.", len(stems))
-        os.remove(self.file_path)
         return stems
+
+    def current_batches_in_fieldbatches(self):
+        content = []
+        with open(self.file_path, "r") as file:
+            for line in file:
+                clean_line = line.replace("INFO: ", "")
+
+                path = clean_line.split(";")[0]
+                parts = path.split("/")
+                if len(parts) > 1 and "raws" in parts:
+                    content_dict = {}
+                    content_dict["BatchID"] = parts[0]
+                    content_dict["SubBatchIndex"] = str(parts[-2])
+                    content_dict["Name"] = parts[-1]
+                    content.append(content_dict)
+
+        df = pd.DataFrame(content)
+        df["SubBatchIndex"] = df["SubBatchIndex"].astype(str)
+        os.remove(self.file_path)
+        return df
 
 
 def main(cfg: DictConfig) -> None:
@@ -262,11 +278,13 @@ def main(cfg: DictConfig) -> None:
         fieldbatchpro = FieldBatchesDataProcessor(cfg)
         fieldbatchpro.list_blob_contents()
         field_stems = fieldbatchpro.get_raw_stems(Path(fieldbatchpro.file_path))
+        df = fieldbatchpro.current_batches_in_fieldbatches()
 
         missing_stems = wir_stems - field_stems
         miss_jpgs_df = weedrepoproc.get_missing_jpg(missing_stems)
 
         weedrepoproc.update_dataframe_with_exif_data(miss_jpgs_df)
+        weedrepoproc.merge_batch_info(df)
         weedrepoproc.save_updated_dataframe()
 
         log.info(f"{cfg.general.task} completed.")
