@@ -69,7 +69,7 @@ class BlobMetricExporter:
 
     def get_blob_csv(self, container_name="weedsimagerepo"):
         sas_token = self.__auth_config_data["blobs"][container_name]["sas_token"]
-        account_url = self.__auth_config_data["blobs"][container_name]["url"]
+        account_url = self.__auth_config_data["blobs"]["account_url"]
 
         # Get data from Blob servers
         images_details = self.get_blob_metrics(account_url, sas_token, container_name)
