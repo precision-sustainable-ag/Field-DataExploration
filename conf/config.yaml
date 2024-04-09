@@ -15,6 +15,7 @@ pipeline:
     - process_tables_analysis
     - verify_container_images
     - create_batches
+    - report
 
 general:
   task: # Leave empty as placeholder
@@ -36,7 +37,7 @@ temp:
 report:
   reportdir: ${general.workdir}/report
   report_plots: ${report.reportdir}/${job.job_now_date}/plots
-  missing_batch_folders: ${data.processed_datadir}/missing_field-batches_folders.txt
+  missing_batch_folders: ${report.reportdir}/${job.job_now_date}/missing_raws.csv
   
 logs:
   logdir: ${general.workdir}/logging
