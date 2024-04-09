@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -7,8 +8,6 @@ import exifread
 import pandas as pd
 import requests
 import yaml
-
-from utils.metadata_dataclass import CameraInfo
 
 
 def read_yaml(path: str) -> dict:
@@ -45,6 +44,26 @@ def find_file_in_subdirectories(directory, filename):
     for root, dirs, files in os.walk(directory):
         if filename in files:
             return os.path.join(root, filename)
+    return None
+
+
+def find_most_recent_data_csv(root_dir, filename="merged_blobs_tables_metadata.csv"):
+    # Regular expression to match folder names and extract dates
+    folder_name_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+    dirs = [x for x in Path(root_dir).rglob(f"*/{filename}")]
+    most_recent_date = None
+    target_folder = None
+    for i in dirs:
+        for j in i.parts:
+            if folder_name_pattern.match(str(j)):
+                folder_date = datetime.strptime(j, "%Y-%m-%d")
+                if most_recent_date is None or folder_date > most_recent_date:
+                    most_recent_date = folder_date
+                    target_folder = Path(i)
+
+    if target_folder:
+        return target_folder
     return None
 
 

@@ -51,71 +51,6 @@ class CreateBatchProcessor:
         log.info(f"CSV Path: {self.csv_path}")
         self.read_and_convert_datetime()
 
-    def update_merged_table_with_batchinfo(self):
-        self.list_blob_contents()
-        df = self.current_batches_in_fieldbatches()
-        self.merge_batch_info(df)
-        self.save_updated_dataframe()
-
-    def list_blob_contents(self) -> None:
-        # Lists the contents of the blob storage
-        log.info("Listing blob contents.")
-        try:
-            read_yamlkeys = self.ykeys["blobs"]["field-batches"]["read_sas_token"]
-            url_yamlkeys = self.ykeys["blobs"]["field-batches"]["url"]
-            azcopy_list(url_yamlkeys, read_yamlkeys, self.file_path)
-            log.info("Blob contents successfully listed.")
-        except Exception as e:
-            log.error("Failed to list blob contents: %s", e, exc_info=True)
-            raise
-
-    def current_batches_in_fieldbatches(self):
-        content = []
-        with open(self.file_path, "r") as file:
-            for line in file:
-                clean_line = line.replace("INFO: ", "")
-
-                path = clean_line.split(";")[0]
-                parts = path.split("/")
-                if len(parts) > 1 and "raws" in parts:
-                    content_dict = {}
-                    content_dict["BatchID"] = parts[0]
-                    content_dict["SubBatchIndex"] = str(parts[-2])
-                    content_dict["Name"] = parts[-1]
-                    content.append(content_dict)
-
-        df = pd.DataFrame(content)
-        df["SubBatchIndex"] = df["SubBatchIndex"].astype(str)
-        return df
-
-    def merge_batch_info(self, df):
-        self.df.drop(
-            [
-                col
-                for col in self.df.columns
-                if ("SubBatchIndex" in col) or ("BatchID" in col)
-            ],
-            axis=1,
-            inplace=True,
-        )
-
-        df["SubBatchIndex"] = df["SubBatchIndex"].astype(str)
-        self.df = pd.merge(self.df, df, on="Name", how="left")
-        os.remove(self.file_path)
-
-    def save_updated_dataframe(self) -> None:
-        # Saves the updated DataFrame to a CSV file.
-        try:
-            self.df.to_csv(self.csv_path, index=False)
-            log.info("DataFrame saved successfully to %s.", self.csv_path)
-        except Exception as e:
-            log.error(
-                "Failed to save DataFrame to %s: %s",
-                self.csv_path,
-                e,
-                exc_info=True,
-            )
-
     def read_and_convert_datetime(self) -> pd.DataFrame:
         log.info("Reading and converting datetime columns in CSV")
         log.info(f"Reading path: {self.csv_path}")
@@ -127,7 +62,6 @@ class CreateBatchProcessor:
                 self.df["CameraInfo_DateTime"], format="%Y:%m:%d %H:%M:%S"
             )
         else:
-            self.update_merged_table_with_batchinfo()
             log.error(
                 f"The 'CameraInfo_DateTime' is not in merged_blobs_tables_metadata.csv. The 2 blob containers are probably up-to-date. Exiting."
             )
@@ -233,7 +167,5 @@ def main(cfg: DictConfig) -> None:
         dataproc.process_df_concurrently()
     else:
         dataproc.process_df()
-
-    dataproc.update_merged_table_with_batchinfo()
 
     log.info(f"{cfg.general.task} completed.")

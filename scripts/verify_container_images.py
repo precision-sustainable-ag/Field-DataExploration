@@ -197,7 +197,7 @@ class WeedsImageRepoDataProcessor(DataProcessor):
             inplace=True,
         )
         df['SubBatchIndex'] = df['SubBatchIndex'].astype(str)
-        self.df = pd.merge(self.df, df, on="Name", how="left")
+        self.df = pd.merge(self.df, df, on="BaseName", how="left")
         self.df['SubBatchIndex'] = self.df['SubBatchIndex'].astype(str)
 
 
@@ -259,7 +259,7 @@ class FieldBatchesDataProcessor(DataProcessor):
                     content_dict = {}
                     content_dict["BatchID"] = parts[0]
                     content_dict["SubBatchIndex"] = str(parts[-2])
-                    content_dict["Name"] = parts[-1]
+                    content_dict["BaseName"] = Path(parts[-1]).stem
                     content.append(content_dict)
 
         df = pd.DataFrame(content)
