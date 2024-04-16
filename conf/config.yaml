@@ -13,8 +13,8 @@ pipeline:
     - wir_blob_data_generator
     - process_blob_analysis
     - process_tables_analysis
-    - verify_container_images
-    - create_batches
+    # - verify_container_images
+    # - create_batches
     - report
 
 general:
