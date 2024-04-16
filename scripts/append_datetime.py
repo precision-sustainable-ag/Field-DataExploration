@@ -106,11 +106,8 @@ class AppendDateTimeToTable:
 
     def get_jpg_df(self) -> pd.DataFrame:
         # Returns a DataFrame of JPGs missing from the specified stem list.
-        batchid_none_df = self.df
-        # batchid_none_df = self.df[self.df['CameraInfo_DateTime'].isnull()]
-        batchid_none_df = batchid_none_df[batchid_none_df['BatchID'].isnull()]
-        batchid_none_df = batchid_none_df[batchid_none_df["Extension"] == "jpg"]
-        batchid_none_df = batchid_none_df[batchid_none_df["HasMatchingJpgAndRaw"]]
+        batchid_none_df = self.df[self.df["Extension"] == "jpg"]
+        batchid_none_df = batchid_none_df[pd.isnull(batchid_none_df['CameraInfo_DateTime'])]
         return batchid_none_df
 
     def download_jpg(self, imgurl: str, destination_path: str):
@@ -146,10 +143,9 @@ class AppendDateTimeToTable:
             try:
                 if 'CameraInfo_DateTime' in row and pd.isnull(row['CameraInfo_DateTime']):
                     exif_datetime = self.extract_exifdatetime(row)
-                elif 'CameraInfo_DateTime' in row and not pd.isnull(row['CameraInfo_DateTime']):
-                    exif_datetime = row["CameraInfo_DateTime"]
-                    
-                return row["ImageURL"], exif_datetime
+                    return row["ImageURL"], exif_datetime
+                else:
+                    return row["ImageURL"], row['CameraInfo_DateTime']
             except Exception as e:
                 log.error(
                     "Failed to update EXIF data for image %s: %s",
@@ -192,5 +188,6 @@ def main(cfg: DictConfig) -> None:
     log.info("Main process started with task: %s", cfg.general.task)
     appenddatetime = AppendDateTimeToTable(cfg)
     df = appenddatetime.get_jpg_df()
+    print(df)
     appenddatetime.update_dataframe_with_exif_data(df)
     appenddatetime.save_updated_dataframe()
