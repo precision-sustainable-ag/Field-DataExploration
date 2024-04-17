@@ -12,7 +12,11 @@ log = logging.getLogger(__name__)
 
 
 class BatchReport:
+    """A class to generate reports for Field data visualization,
+    focusing on different aspects of plant data.
+    """
     def __init__(self, cfg) -> None:
+        """Initialize the BatchReport with configuration and data loading."""
         self.cfg = cfg
         self.csv_path = find_most_recent_data_csv(cfg.data.datadir)
         self.df = self.read()
@@ -20,14 +24,16 @@ class BatchReport:
         self.config_palettes()
         # self.cfg.reportdir = cfg.report.reportdir
 
-    def config_palettes(self):
+    def config_palettes(self) -> None:
+        """Configure the color palettes for different plant types."""
         self.planttype_palette = {
             "WEEDS": "#55A868",
             "COVERCROPS": "#4C72B0",
             "CASHCROPS": "#C44E52",
         }
 
-    def config_report_dir(self):
+    def config_report_dir(self) -> None:
+        """Configure and create necessary directories for report outputs."""
         self.report_dir = Path(self.cfg.report.missing_batch_folders).parent
         self.report_dir.mkdir(exist_ok=True, parents=True)
 
@@ -35,12 +41,21 @@ class BatchReport:
         self.reportplot_dir.mkdir(exist_ok=True, parents=True)
 
     def read(self) -> pd.DataFrame:
+        """Read and load data from a CSV file."""
         log.info("Reading and converting datetime columns in CSV")
         log.info(f"Reading path: {self.csv_path}")
         df = pd.read_csv(self.csv_path, dtype={"SubBatchIndex": str})
+        
+ 
         return df
 
-    def write_missing_raws(self, df):
+    def write_duplicate_jpgs(self, df: pd.DataFrame) -> None:
+        pass
+
+    def write_duplicate_raws(self, df:pd.DataFrame) -> None:
+        pass
+    def write_missing_raws(self, df: pd.DataFrame) -> None:
+        """Write information on missing raw images to a CSV file."""
         # By state, species, upload_time
         columns = [
             "Name",
@@ -49,18 +64,24 @@ class BatchReport:
             "Species",
             "MasterRefID",
             "BaseName",
+            "Extension",
+            "UploadDateUTC",
             "ImageIndex",
             "Username",
             "HasMatchingJpgAndRaw",
         ]
+        df['UploadDateTimeUTC'] = pd.to_datetime(df['UploadDateTimeUTC'])
+        df['UploadDateUTC'] = df['UploadDateTimeUTC'].dt.date
         df = (
             df[df["HasMatchingJpgAndRaw"] == False][columns]
-            .drop_duplicates(subset="Name")
+            # .drop_duplicates(subset="Name")
             .reset_index(drop=True)
         )
-        df.to_csv(self.cfg.report.missing_batch_folders)
+        df.to_csv(self.cfg.report.missing_batch_folders, index=False)
+        log.info("Missing raws data written successfully.")
 
-    def plot_unique_masterrefids_by_state_and_planttype(self):
+    def plot_unique_masterrefids_by_state_and_planttype(self) -> None:
+        """Generate a bar plot showing the distribution of unique MasterRefIDs by state and plant type."""
         data = self.df[self.df["HasMatchingJpgAndRaw"] == True]
 
         # Count the number of unique MasterRefID for each UsState and Extension
@@ -81,6 +102,8 @@ class BatchReport:
                 palette=self.planttype_palette,
                 ax=ax,
             )
+            
+            ax.set_xticks(ax.get_xticks())
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
             ax.set_title(
                 "Unique MasterRefIDs (samples) by State and Plant Type"
@@ -100,6 +123,7 @@ class BatchReport:
                 f"{self.cfg.report.report_plots}/unique_masterrefids_by_state_and_planttype.png"
             )
             fig.savefig(save_path, dpi=300)
+            log.info("Unique MasterRefIDs plot saved.")
 
     def plot_image_vs_raws_by_species(self):
         # Count the number of unique Images for each UsState and Extension
@@ -120,6 +144,7 @@ class BatchReport:
                 hue="Extension",
                 ax=ax,
             )
+            ax.set_xticks(ax.get_xticks())
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
             ax.set_title(
                 "Number of Images by State and by Image Extension"
@@ -132,6 +157,7 @@ class BatchReport:
                 f"{self.cfg.report.report_plots}/image_vs_raws_by_species.png"
             )
             fig.savefig(save_path, dpi=300)
+            log.info("Jpg vs Raws plot saved.")
         
 
     def plot_sample_species_distribution(self):
@@ -178,9 +204,11 @@ class BatchReport:
                 f"{self.cfg.report.report_plots}/unique_masterrefids_by_species.png"
             )
             fig.savefig(save_path, dpi=300)
+            log.info("Species Distribution plot saved.")
 
 
 def main(cfg: DictConfig) -> None:
+    """Main function to execute batch report tasks."""
     log.info(f"Starting {cfg.general.task}")
     batchrep = BatchReport(cfg)
     batchrep.write_missing_raws(batchrep.df)
