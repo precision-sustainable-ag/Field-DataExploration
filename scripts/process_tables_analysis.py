@@ -124,7 +124,7 @@ class WIRTablesPreProcessing:
 
 
         # Drop duplicates based on name
-        processed_table.drop_duplicates(subset="name", inplace=True)
+        # processed_table.drop_duplicates(subset="name", inplace=True)
 
         # Find if JPG has matching RAW
         processed_table["BaseName"] = processed_table["name"].str.rsplit(".", n=1).str[0]
