@@ -18,6 +18,9 @@ pipeline:
     # - create_batches
     # - report
     
+    # - verify_container_images
+    # - create_batches
+    - report
 
 general:
   task: # Leave empty as placeholder
