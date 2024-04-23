@@ -329,7 +329,7 @@ class BatchReport:
             
             ax.set_xticks(ax.get_xticks())
             ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-            ax.figure.suptitle("Samples by Species", fontsize=18)
+            ax.figure.suptitle("Samples by State", fontsize=18)
 
             # Adding a note under the title           
             annot_text = "$^{*}$HasMatchingJpgAndRaw = True"
