@@ -249,7 +249,7 @@ class BatchReport:
 
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.report_plots}/unique_masterrefids_by_species.png"
+                f"{self.cfg.report.report_plots}/unique_masterrefids_species.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Unique MasterRefIDs by Species plot saved.")
