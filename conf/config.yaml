@@ -30,7 +30,7 @@ data:
   tablesdir: ${data.datadir}/tables/${job.job_now_date}
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
   processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
-  permanent_datadir: ${data.datadir}/permanent_tables
+  persistent_datadir: ${data.datadir}/persistent_tables
 
 temp:
   temp_json_data: ${general.workdir}/tempdata/json_data

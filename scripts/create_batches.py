@@ -106,7 +106,7 @@ class CreateBatchProcessor:
             find_most_recent_csv(self.datadir, "merged_blobs_tables_metadata.csv")
         )
         
-        self.permanent_csv = Path(cfg.data.permanent_datadir,"merged_blobs_tables_metadata_permanent.csv")
+        self.permanent_csv = Path(cfg.data.persistent_datadir,"merged_blobs_tables_metadata_permanent.csv")
         
         self.file_path = "./tempoutputfieldbatches.txt"
         log.info(f"CSV Path: {self.csv_path}")
