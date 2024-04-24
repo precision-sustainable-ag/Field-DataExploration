@@ -208,52 +208,6 @@ class BatchReport:
             fig.savefig(save_path, dpi=300)
             log.info("Species Distribution plot saved.")
         
-    def plot_num_samples_species(self):
-        """Generate a bar plot showing the distribution of unique MasterRefIDs by species."""
-
-        data = self.df[self.df["HasMatchingJpgAndRaw"] == True]
-
-        # Count the number of unique MasterRefID for each Species
-        unique_ids_count = (
-            data.groupby(["Species"])["MasterRefID"]
-            .nunique()
-            .reset_index()
-            .sort_values(by="MasterRefID")
-        )
-
-        # Plotting
-        with plt.style.context("ggplot"):
-            fig, ax = plt.subplots(figsize=(12, 6))
-
-            bar_plot = sns.barplot(
-                data=unique_ids_count,
-                x="Species",
-                y="MasterRefID",
-                ax=ax,
-                color='Green',
-            )
-            
-            ax.set_xticks(ax.get_xticks())
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
-            ax.figure.suptitle("Samples by Species", fontsize=18)
-
-            # Adding a note under the title           
-            annot_text = "$^{*}$HasMatchingJpgAndRaw = True"
-            ax.annotate(annot_text, xy=(0.05, 0.9), xycoords='axes fraction', ha='left', va='bottom', annotation_clip=False)
-            
-            ax.set_ylabel("# MasterRefIDs (samples)")
-            ax.set_xlabel("Plant Species")
-            # Add labels to each bar
-            for bar_container in bar_plot.containers:
-                ax.bar_label(bar_container, label_type='edge', padding=3, fontsize=7)
-
-            fig.tight_layout()
-            save_path = (
-                f"{self.cfg.report.report_plots}/unique_masterrefids_species.png"
-            )
-            fig.savefig(save_path, dpi=300)
-            log.info("Unique MasterRefIDs by Species plot saved.")
-
     def plot_num_samples_season(self):
         """Generate a bar plot showing the distribution of unique MasterRefIDs by plant type."""
 
@@ -276,8 +230,7 @@ class BatchReport:
                 x="PlantType",
                 y="MasterRefID",
                 ax=ax,
-                width=0.25,
-                color= 'Orange'
+                width=0.25
             )
             
             ax.set_xticks(ax.get_xticks())
@@ -323,8 +276,7 @@ class BatchReport:
                 x="UsState",
                 y="MasterRefID",
                 ax=ax,
-                width=0.25,
-                color= 'purple'
+                width=0.25
             )
             
             ax.set_xticks(ax.get_xticks())
@@ -356,7 +308,6 @@ def main(cfg: DictConfig) -> None:
     batchrep.plot_unique_masterrefids_by_state_and_planttype()
     batchrep.plot_sample_species_distribution()
     batchrep.plot_image_vs_raws_by_species()
-    batchrep.plot_num_samples_species()
     batchrep.plot_num_samples_season()
     batchrep.plot_num_samples_usstate()
     log.info(f"{cfg.general.task} completed.")
