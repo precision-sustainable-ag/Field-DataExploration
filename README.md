@@ -59,3 +59,13 @@ With the environment set up and activated, you can run the scripts provided in t
    ```bash
    python FIELD_REPORT.py
    ```
+
+## Major Scripts
+
+### `append_datetime`
+This script main purpose is to quickley get image DateTime information that can later be used to form batches. We quickley read jpg exif data to get capture datetime information, then remove the download jpg. We get the jpg from the azure blob container. This script appends date-time metadata extracted from the downloaded image EXIF data to an existing persistent CSV table. this is a crucial step that allows us to form "batches" for preprocessing. The script must be run before the "create_batches" task. If no new data is found, nothing happens. 
+
+Features of Note:
+   - The script finds the most recent "merged..." CSV file in "data/processed_data" and merges it with persistent data for continuous updates.
+   - It processes each JPG image to extract and append EXIF DateTime metadata to the relevant records in the CSV.
+   - Concurrency Handling: We use concurrent.futures and ThreadPoolExecutor for handling multiple downloads and reading of exif data at the same time.
