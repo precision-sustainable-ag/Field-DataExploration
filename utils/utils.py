@@ -6,7 +6,6 @@ from pathlib import Path
 
 import exifread
 import pandas as pd
-import requests
 import yaml
 
 
@@ -29,22 +28,6 @@ def read_csv_as_df(path: str) -> pd.DataFrame:
     except Exception as e:
         raise FileNotFoundError(f"File does not exist : {path}")
 
-
-def find_file_in_subdirectories(directory, filename):
-    """
-    Searches for a file within a directory and all its subdirectories.
-
-    Parameters:
-    - directory: The starting directory path where the search begins.
-    - filename: The name of the file to search for.
-
-    Returns:
-    - The path to the first instance of the file if found, otherwise None.
-    """
-    for root, dirs, files in os.walk(directory):
-        if filename in files:
-            return os.path.join(root, filename)
-    return None
 
 
 def find_most_recent_data_csv(root_dir, filename="merged_blobs_tables_metadata.csv"):
@@ -132,24 +115,6 @@ def get_exif_data(image_path: str) -> dict:
     return exif
 
 
-def download_from_url(image_url: str, savedir: str = ".") -> None:
-    """Downloads an image from a URL and saves it to the specified directory."""
-    if not Path(savedir).exists():
-        Path(savedir).mkdir(exist_ok=True, parents=True)
-    fname = Path(image_url).name
-    fpath = Path(savedir, fname)
-    # Send a GET request to the image URL
-    response = requests.get(image_url)
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        # Open a file in binary write mode
-        with open(fpath, "wb") as file:
-            # Write the content of the response to the file
-            file.write(response.content)
-    else:
-        print(f"Failed to download image from {image_url}")
-
 
 def azcopy_list(url, read_keys, tempoutput):
     azlist_src = url + read_keys
@@ -163,20 +128,6 @@ def azcopy_list(url, read_keys, tempoutput):
 
 def download_azcopy(azuresrc, localdest):
     command = f'azcopy cp "{azuresrc}" "{localdest}"'
-
-    # result = subprocess.run(command, capture_output=True, text=True)
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    # Check if the command was executed successfully
-    if result.returncode == 0:
-        print("Copy successful")
-        print(result.stdout)
-    else:
-        print("Error in copy operation")
-        print(result.stderr)
-
-
-def upload_azcopy(localdest, azuredst):
-    command = f'azcopy cp "{localdest}" "{azuredst}"'
 
     # result = subprocess.run(command, capture_output=True, text=True)
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
