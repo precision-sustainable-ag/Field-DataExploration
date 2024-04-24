@@ -188,6 +188,5 @@ def main(cfg: DictConfig) -> None:
     log.info("Main process started with task: %s", cfg.general.task)
     appenddatetime = AppendDateTimeToTable(cfg)
     df = appenddatetime.get_jpg_df()
-    print(df)
     appenddatetime.update_dataframe_with_exif_data(df)
     appenddatetime.save_updated_dataframe()

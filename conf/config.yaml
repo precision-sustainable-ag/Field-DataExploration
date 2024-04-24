@@ -13,14 +13,11 @@ pipeline:
     - wir_blob_data_generator
     - process_blob_analysis
     - process_tables_analysis
-    - append_datetime
+    # - append_datetime
     # - verify_container_images
     # - create_batches
     # - report
-    
-    # - verify_container_images
-    # - create_batches
-    - report
+
 
 general:
   task: # Leave empty as placeholder
