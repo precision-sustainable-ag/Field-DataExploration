@@ -1,17 +1,75 @@
+import datetime as dt
 import logging
 import os
+import re
 import subprocess
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Set
 
 import pandas as pd
+from azure.storage.blob import BlobServiceClient
+from dateutil.parser import parse
 from omegaconf import DictConfig
+from tqdm import tqdm
 
 from utils.utils import azcopy_list, find_most_recent_csv, read_csv_as_df, read_yaml
 
 log = logging.getLogger(__name__)
+
+
+class FieldBatchLister:
+    
+    def __init__(self, cfg):
+        """
+        Initializes the comparer with configurations, container names, SAS tokens, and output directory.
+        """
+        self.keys = self.config_keys(cfg.pipeline_keys)
+
+        # self.output_dir = Path(cfg.general.field_results)
+        # self.output_dir.mkdir(exist_ok=True, parents=True)
+
+        self.timestamp = datetime.now().strftime("%Y%m%d")
+
+        all_blobs = self.list_unique_folders()
+        self.df = self.get_blobs_per_batch(all_blobs)
+
+    def config_keys(self, keypath):
+        # Configures keys from YAML configuration.
+        yamkeys = read_yaml(keypath)
+        self.field_batches_sas_token = yamkeys["blobs"]["field-batches"]["read_sas_token"]
+        self.field_batches_url = yamkeys["blobs"]["account_url"]
+        self.container_name = "field-batches"
+        log.debug("WeedsImageRepo keys configured.")
+
+    def list_unique_folders(self):
+        """
+        List all unique folders in a given container using the Azure Blob Service client.
+        Filters folders based on a predefined pattern.
+        """
+        blob_service_client = BlobServiceClient(
+            account_url=self.field_batches_url, credential=self.field_batches_sas_token
+        )
+        container_client = blob_service_client.get_container_client(self.container_name)
+        all_blobs = []
+        for blob in tqdm(container_client.list_blobs()):
+        # for blob in tqdm(container_client.walk_blobs(delimiter=".")):
+            blob_name = blob.name
+            if ("raws" in blob_name) and not ("preprocessed" in blob_name):
+                all_blobs.append(blob_name)
+        
+        return all_blobs
+    
+    def get_blobs_per_batch(self, all_blobs):
+        df = pd.DataFrame(all_blobs, columns=['BlobName'])
+        df[['BatchID', 'Subfolder1', 'Subfolder2', 'FileName']] = df['BlobName'].str.split('/',n=4, expand=True)
+        df["BaseName"] = df["FileName"].str.rsplit(".", n=1).str[0]
+        df = df.sort_values(by=["BatchID"])
+        df["Batched"] = True
+        df["BatchFolder"] = df["BatchID"] + "/" + df["Subfolder1"] + "/" + df["Subfolder2"]
+        return df
 
 
 def round_down_to_nearest_3_hours(dt: datetime) -> datetime:
@@ -47,25 +105,36 @@ class CreateBatchProcessor:
         self.csv_path = Path(
             find_most_recent_csv(self.datadir, "merged_blobs_tables_metadata.csv")
         )
+        
+        self.permanent_csv = Path(cfg.data.permanent_datadir,"merged_blobs_tables_metadata_permanent.csv")
+        
         self.file_path = "./tempoutputfieldbatches.txt"
         log.info(f"CSV Path: {self.csv_path}")
         self.read_and_convert_datetime()
+    
+    def replace_date_format(self, date):
+        # Define the regex pattern to match the date format
+        pattern = r'(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})'
+        # Replace ':' with '-' using regex substitution
+        if pd.isna(date):
+            return date
+        return re.sub(pattern, r'\1-\2-\3 \4:\5:\6', date)
+    
+    def standardize_dt_format(self, df):
+        df['CameraInfo_DateTime'] = df['CameraInfo_DateTime'].apply(self.replace_date_format)
+        df['CameraInfo_DateTime'] = pd.to_datetime(df['CameraInfo_DateTime'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+        return df
 
     def read_and_convert_datetime(self) -> pd.DataFrame:
         log.info("Reading and converting datetime columns in CSV")
         log.info(f"Reading path: {self.csv_path}")
-        self.df = read_csv_as_df(self.csv_path)
-        self.df["UploadDateTimeUTC"] = pd.to_datetime(self.df["UploadDateTimeUTC"])
-        if "CameraInfo_DateTime" in self.df.columns:
+        # self.df = read_csv_as_df(self.csv_path)
+        self.df = pd.read_csv(self.csv_path, dtype={'CameraInfo_DateTime': str})
+        if "CameraInfo_DateTime" not in self.df.columns:
             # Reads a CSV file into a DataFrame and converts specified columns to datetime.
-            self.df["CameraInfo_DateTime"] = pd.to_datetime(
-                self.df["CameraInfo_DateTime"], format="%Y:%m:%d %H:%M:%S"
-            )
-        else:
-            log.error(
-                f"The 'CameraInfo_DateTime' is not in merged_blobs_tables_metadata.csv. The 2 blob containers are probably up-to-date. Exiting."
-            )
-            exit(0)
+            self.df = pd.read_csv(self.permanent_csv, dtype={'CameraInfo_DateTime': str})
+
+        self.df = self.standardize_dt_format(self.df)
 
     def split_datetime(self) -> "CreateBatchProcessor":
         log.info("Splitting datetime into separate date and time columns")
@@ -107,6 +176,36 @@ class CreateBatchProcessor:
 
         self.read_weedimgrepo_key = self.ykeys["blobs"]["weedsimagerepo"]["sas_token"]
         self.weedimgrepo_url = self.ykeys["blobs"]["weedsimagerepo"]["url"]
+
+    def add_extra_number(self, cell_value):
+        # Extract the last number from the cell
+        last_number = int(cell_value[-1])
+        # Increment the last number by 1 and pad with zeros
+        new_last_number = str(last_number + 1).zfill(len(cell_value))
+        # Concatenate the original value with the new last number
+        return cell_value[:-1] + new_last_number
+    
+    def filter_batched_data(self,present_batches_df):
+        self.df = self.df[~self.df["BaseName"].isin(present_batches_df["BaseName"])]
+        if len(self.df) == 0:
+            log.info("No new images present. No images to be moved to the field-batches blob containers. Exiting.")
+            exit(0)
+
+        self.df[["BatchID_y", "Subfolder1", "Subfolder2", "FName"]] = self.df['batches'].str.split('/', expand=True)
+        self.df["BatchFolder"] = self.df["BatchID_y"] + "/" + self.df["Subfolder1"] + "/" + self.df["Subfolder2"]
+        
+        duplicate_batch_folders = self.df[self.df["BatchFolder"].isin(present_batches_df["BatchFolder"])]
+        
+        if len(duplicate_batch_folders) > 0:
+            
+            log.warning("Duplicate batch folders. Renaming the duplicates. Duplicates include...")
+            for index, row in duplicate_batch_folders.iterrows():
+                log.warning(f'{row["BatchFolder"]}/{row["FName"]}')
+            log.warning("Consider investiagting duplicate folders. Exiting.")
+            exit()
+            
+
+
 
     def move_from_weeedsimagerepo2fieldbatches(self, batch: str) -> None:
         # Moves batches from the weeds image repository to field batches using azcopy.
@@ -157,11 +256,16 @@ class CreateBatchProcessor:
 
 def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
+    present_batches_df = FieldBatchLister(cfg).df
+    present_batches_df.to_csv("present_batches.csv", index=False)
     dataproc = CreateBatchProcessor(cfg)
     dataproc.config_keys()
     dataproc.split_datetime()
     dataproc.preprocess_df()
     dataproc.adjust_groups()
+    dataproc.filter_batched_data(present_batches_df)
+    
+    # dataproc.df.to_csv("adjusted_groups.csv", index=False)
     run_concurrent = True
     if run_concurrent:
         dataproc.process_df_concurrently()

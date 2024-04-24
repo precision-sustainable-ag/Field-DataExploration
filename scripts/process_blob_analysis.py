@@ -56,6 +56,7 @@ class BlobTablePreProcessing:
         # remove values with missing MasterRefID
         processed_blobs = processed_blobs[processed_blobs['MasterRefID'].notna()]
         # removing RowKey from merged csv
+        processed_blobs["wirimagerefs_rowkey"] = processed_blobs["RowKey"]
         processed_blobs = processed_blobs.drop('RowKey',axis=1)
         if processed_blobs.empty:
             log.error(f"processed_blobs df is empty, Not saving!")
