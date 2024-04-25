@@ -69,3 +69,6 @@ Features of Note:
    - The script finds the most recent "merged..." CSV file in "data/processed_data" and merges it with persistent data for continuous updates.
    - It processes each JPG image to extract and append EXIF DateTime metadata to the relevant records in the CSV.
    - Concurrency Handling: We use concurrent.futures and ThreadPoolExecutor for handling multiple downloads and reading of exif data at the same time.
+
+### `create_bathces`
+This scripts create batches by using the updated DateTime information from `append_datetime` , organizes raw images into "batches", and copies those image batches to the field-batches blob container. The script adjusts and groups images based on metadata into "batches" and filters out already processed or duplicate batches. Batch groupings are based on State, capture date, and 3 hour capture time intervals. It offers the flexibility to process data either concurrently or sequentially.
