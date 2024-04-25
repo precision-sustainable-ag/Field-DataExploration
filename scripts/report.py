@@ -89,8 +89,7 @@ class BatchReport:
         current_date_time = pd.to_datetime(datetime.now().date())
         seven_days_ago = pd.to_datetime(current_date_time - timedelta(days=7)) #calculate date 7 days ago
 
-        df_last_7_days = df[(df['UploadDateUTC'] >= seven_days_ago) & (df['UploadDateUTC'] <= current_date_time)] #filter for last 7 days
-
+        df_last_7_days = df[(df['UploadDateUTC'] >= seven_days_ago) & (df['UploadDateUTC'] <= current_date_time)].copy() #filter for last 7 days
         df_last_7_days['IsDuplicated'] = df_last_7_days.duplicated('Name', keep=False)
         grouped_df_last_7_days = df_last_7_days.groupby(["UsState","PlantType", "Species","Extension", "HasMatchingJpgAndRaw", "IsDuplicated"]).size().reset_index(name="count")
 
