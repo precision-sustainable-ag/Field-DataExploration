@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -79,6 +80,23 @@ class BatchReport:
         )
         df.to_csv(self.cfg.report.missing_batch_folders, index=False)
         log.info("Missing raws data written successfully.")
+
+    def num_uploads_last_7days_by_state(self):
+        """Creates a table of uploads from last 7 days by location in a csv format."""
+
+        df = self.df.copy()
+        df['UploadDateTimeUTC'] = pd.to_datetime(df['UploadDateTimeUTC'])
+        df['UploadDateUTC'] = pd.to_datetime(df['UploadDateTimeUTC'].dt.date)
+        current_date_time = pd.to_datetime(datetime.now().date())
+        seven_days_ago = pd.to_datetime(current_date_time - timedelta(days=7)) #calculate date 7 days ago
+
+        df_last_7_days = df[(df['UploadDateUTC'] >= seven_days_ago) & (df['UploadDateUTC'] <= current_date_time)] #filter for last 7 days
+
+        df_last_7_days['IsDuplicated'] = df_last_7_days.duplicated('Name', keep=False)
+        grouped_df_last_7_days = df_last_7_days.groupby(["UsState","PlantType", "Species","Extension", "HasMatchingJpgAndRaw", "IsDuplicated"]).size().reset_index(name="count")
+
+        grouped_df_last_7_days.to_csv(self.cfg.report.uploads_7days, index=False)
+        log.info("Created table of uploads from last 7 days by location successfully.")
 
     def plot_unique_masterrefids_by_state_and_planttype(self) -> None:
         """Generate a bar plot showing the distribution of unique MasterRefIDs by state and plant type."""
@@ -215,4 +233,5 @@ def main(cfg: DictConfig) -> None:
     batchrep.plot_unique_masterrefids_by_state_and_planttype()
     batchrep.plot_sample_species_distribution()
     batchrep.plot_image_vs_raws_by_species()
+    batchrep.num_uploads_last_7days_by_state()
     log.info(f"{cfg.general.task} completed.")

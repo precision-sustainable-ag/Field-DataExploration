@@ -9,14 +9,14 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    - wir_table_generator
-    - wir_blob_data_generator
-    - process_blob_analysis
-    - process_tables_analysis
+    # - wir_table_generator
+    # - wir_blob_data_generator
+    # - process_blob_analysis
+    # - process_tables_analysis
     # - append_datetime
     # - verify_container_images
     # - create_batches
-    # - report
+    - report
 
 
 general:
@@ -41,6 +41,7 @@ report:
   reportdir: ${general.workdir}/report
   report_plots: ${report.reportdir}/${job.job_now_date}/plots
   missing_batch_folders: ${report.reportdir}/${job.job_now_date}/missing_raws.csv
+  uploads_7days: ${report.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
   
 logs:
   logdir: ${general.workdir}/logging
