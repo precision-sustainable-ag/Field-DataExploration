@@ -43,11 +43,12 @@ class TableExporter:
             )
             table_client = table_service_client.get_table_client(table_name=table_name)
             # Fetch all entities from the specified table
-            entities = list(table_client.list_entities())
-            # Convert entities to a list of dictionaries (assuming entities are not empty)
-            table_data = [entity for entity in entities]
-
-            return table_data
+            entities = []
+            for i in table_client.list_entities():
+                timestamp = str(i._metadata["timestamp"])
+                i["Timestamp"] = timestamp
+                entities.append(i)
+            return entities
 
         except Exception as error:
             log.exception(f"Error! Check {table_name} authorization parameters")
