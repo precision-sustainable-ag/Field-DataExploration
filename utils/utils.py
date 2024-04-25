@@ -138,3 +138,16 @@ def download_azcopy(azuresrc, localdest):
     else:
         print("Error in copy operation")
         print(result.stderr)
+
+def download_azcopy_multiple(azuresrc, localdest, image_list):
+    command = f'azcopy cp "{azuresrc}" "{localdest}" --include-path="{image_list}"'
+
+    # result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    # Check if the command was executed successfully
+    if result.returncode == 0:
+        print("Copy successful")
+        print(result.stdout)
+    else:
+        print("Error in copy operation")
+        print(result.stderr)
