@@ -37,16 +37,20 @@ class WIRTablesPreProcessing:
 
         ## get csv data 
         self.wircovercropsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wircovercropsmeta_fname))
+        self.wircovercropsmeta_df["wircovercropsmeta_RowKey"] = self.wircovercropsmeta_df["RowKey"]
         self.wircovercropsmeta_df = self.wircovercropsmeta_df.drop(['RowKey',"PartitionKey","Affiliation"],axis=1)
 
         self.wircropsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wircropsmeta_fname))
+        self.wircropsmeta_df["wircropsmeta_RowKey"] = self.wircropsmeta_df["RowKey"]
         self.wircropsmeta_df = self.wircropsmeta_df.drop('RowKey',axis=1)
         # [Q: Check CropTypr for N/A values? fill nan if not required ]
 
         self.wirweedsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wirweedsmeta_fname))
+        self.wirweedsmeta_df["wirweedsmeta_RowKey"] = self.wirweedsmeta_df["RowKey"]
         self.wirweedsmeta_df = self.wirweedsmeta_df.drop('RowKey',axis=1)
 
         self.wirmastermeta_df = read_csv_as_df(os.path.join(self.tables_dir,wirmastermeta_fname))
+        self.wirmastermeta_df["wirmastermeta_RowKey"] = self.wirmastermeta_df["RowKey"]
         self.wirmastermeta_df.rename(columns={"RowKey": "MasterRefID"},inplace=True)
         self.wirmastermeta_df = self.wirmastermeta_df.drop('WeedsOrCrops',axis=1)
 
