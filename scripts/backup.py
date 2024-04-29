@@ -7,6 +7,7 @@ import os
 import pandas as pd
 from typing import Set
 from datetime import datetime
+import csv
 
 from utils.utils import (
     azcopy_list,
@@ -21,6 +22,10 @@ from utils.utils import (
 log = logging.getLogger(__name__)
 
 class Backup:
+    """
+    Backup data from 6 tables and weedsimagerepo blob in the weedsimagerepo container in azure storage
+    """
+
     def __init__(self, cfg: DictConfig):
         self.yamlkeys = read_yaml(cfg.pipeline_keys)
     
@@ -44,6 +49,9 @@ class Backup:
                 filename = line.split(" ")[1].replace(";", "")
                 files.add(filename)
         log.info("%d total images identified.", len(files))
+
+        # Ensure the temporary file is removed after processing
+        os.remove("./temp_" + blob_name + ".txt")
         return files
 
     def get_backedup_filenames(self, backup_dir) -> Set[str]:
@@ -57,19 +65,24 @@ class Backup:
         return files
     
     def download_pending_blobs(self, blob_name, backup_dir, file_list):
+        # Downloads files mentioned in file_list from azure blob storage
         log.info(f"Starting backup for blob:  {blob_name}")
         read_yamlkeys = self.yamlkeys["blobs"][blob_name]["sas_token"]
         url_yamlkeys = self.yamlkeys["blobs"][blob_name]["url"]
         backuppath = Path(backup_dir)
+        
+        # Splitting files into groups of 100 each as azcopy has a limitation on the parameter length
         split_file_list = [file_list[i:i+100] for i in range(0, len(file_list), 100)]
         for files in split_file_list:
             download_azcopy_multiple(url_yamlkeys, read_yamlkeys, backuppath, files, blob_name)
 
     def get_tables_list(self):
+        # Reads authorized_keys.yaml file and generates a list of table names	
         tables = self.yamlkeys["tables"]
         return list(tables.keys())
 
     def download_table_contents(self, table_name, backup_path):
+        # Downloads contents of each table as a csv file and saves them in the backup directory based on the backup date
         log.info(f"Starting backup for table:  {table_name}")
         read_yamlkeys = self.yamlkeys["tables"][table_name]["sas_token"]
         url_yamlkeys = self.yamlkeys["tables"][table_name]["url"]
@@ -84,10 +97,6 @@ class Backup:
 
         if table_data:
             df_table_details = pd.DataFrame(table_data)
-						# Clean table data
-            # if 'GroundCover' in df_table_details:
-            #     df_table_details["GroundCover"] = df_table_details["GroundCover"].replace("\u2013", "-")
-
             # Export to CSV
             csv_path = Path(backup_path, f"{table_name}_table_backup.csv")
             df_table_details.to_csv(csv_path, index=False)
@@ -98,7 +107,8 @@ class Backup:
 
 
 def main(cfg: DictConfig) -> None:
-    # log.info(f"Starting {cfg.general.task}")
+    # Main function to orchestrate the data processing.
+    log.info(f"Starting {cfg.general.task}")
     try:
         backup = Backup(cfg)
 
@@ -117,6 +127,7 @@ def main(cfg: DictConfig) -> None:
         for table in tables:
             backup.download_table_contents(table, tables_backup_dir)
         # get file names from azure blob
+        
         blobs = ["weedsimagerepo"]
         for blob in blobs:
             backup.list_azstorage_contents(blob)
