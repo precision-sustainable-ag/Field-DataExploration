@@ -9,13 +9,14 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    - wir_table_generator
-    - wir_blob_data_generator
-    - process_blob_analysis
-    - process_tables_analysis
-    - verify_container_images
-    - create_batches
-    - report
+    # - wir_table_generator
+    # - wir_blob_data_generator
+    # - process_blob_analysis
+    # - process_tables_analysis
+    # - verify_container_images
+    # - create_batches
+    # - report
+    - backup
 
 general:
   task: # Leave empty as placeholder
