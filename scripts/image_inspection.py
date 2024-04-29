@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 from omegaconf import DictConfig
-from utils.utils import find_most_recent_csv, download_from_url, get_exif_data
+from utils.utils import find_most_recent_data_csv, download_from_url, get_exif_data
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class InsepctRecentUploads:
     def __init__(self, cfg) -> None:
         """Initialize the InsepctRecentUploads class with confguration and data loading"""
         self.cfg = cfg
-        self.csv_path = cfg.data.permanent_table
+        self.csv_path = find_most_recent_data_csv(cfg.data.datadir)
         self.df = self.read()
         self.config_inspection_dir()
 
@@ -43,13 +43,14 @@ class InsepctRecentUploads:
     def download_images_temp(self) -> None:
         """Download upto 15 random images chosen from last 15 days of uploads for all locations."""
         df = self.df.copy()
-        df['capture_date'] = df['BatchID'].str[-10:] #extract last 10 digits (capture date)
-        df['capture_date'] = pd.to_datetime(df['capture_date'], format='%Y-%m-%d')
 
+        df['UploadDateTimeUTC'] = df['UploadDateTimeUTC'].str[:10]
+        df['upload_date'] = pd.to_datetime(df['UploadDateTimeUTC'], format='%Y-%m-%d')
+        
         current_date_time = pd.to_datetime(datetime.now().date())
         fifteen_days_ago = pd.to_datetime(current_date_time - timedelta(days=15)) #calculate date 15 days ago
 
-        df_last_15_days = df[(df['capture_date'] >= fifteen_days_ago) & (df['capture_date'] <= current_date_time)] # df with all columns for last 15 days of uploads
+        df_last_15_days = df[(df['upload_date'] >= fifteen_days_ago) & (df['upload_date'] <= current_date_time)] # df with all columns for last 15 days of uploads
         df_jpg_url = df_last_15_days[df_last_15_days['ImageURL'].str.endswith('.JPG')]
 
         if len(df_jpg_url) < 15:
@@ -66,7 +67,7 @@ class InsepctRecentUploads:
     def plotting_sample_images_and_exif(self) -> None:    
         """ Plots sample images along with important EXIF information."""
         log.info(f"Plotting images with exif data of images selected for sampling")
-
+        df = self.df.copy()
         # remove existing random samples if generating samples again
         try:
             [os.remove(os.path.join(self.inspect_dir, file_name)) for file_name in os.listdir(self.inspect_dir)] 
@@ -76,35 +77,44 @@ class InsepctRecentUploads:
         temp_image_dir = self.cfg.temp.temp_image_dir
 
         for filename in os.listdir(temp_image_dir):
-            if filename.endswith(('.JPG', '.jpeg', '.png', '.gif')):  # Filter for image file extensions
+            if filename.endswith(('.JPG','.jpg', '.jpeg', '.png', '.gif')):  # Filter for image file extensions
                 image_path=(os.path.join(temp_image_dir, filename))
+                image_name = os.path.basename(image_path)
             else:
                 log.info("Error: check the files in {self.cfg.temp.temp_image_dir}.")
 
             try:
                 exif_info = get_exif_data(image_path)
-                # Select EXIF values of interest
-                selected_tags = ['Image DateTime', 'EXIF ExposureTime', 'EXIF ISOSpeedRatings', 'EXIF FNumber', 'EXIF FocalLength', 'EXIF Flash']
+                # Select EXIF values of interest 
+                selected_tags = ['Image DateTime', 'EXIF ExposureTime', 'EXIF ISOSpeedRatings', 'EXIF FNumber', 'EXIF FocalLength']
                 selected_info = {tag: value for tag, value in exif_info.items() if tag in selected_tags}
-                
+                 
+                # Add additional information from df for the same image
+                selected_info['Username'] = df.loc[df['Name']==image_name, 'Username'].iloc[0]
+                selected_info['Species'] = df.loc[df['Name']==image_name, 'Species'].iloc[0]
+                selected_info['UploadDateTimeUTC'] = df.loc[df['Name']==image_name, 'UploadDateTimeUTC'].iloc[0]
+                selected_info['HasMatchingJpgAndRaw'] = df.loc[df['Name']==image_name, 'HasMatchingJpgAndRaw'].iloc[0]
+
                 # Plot the image
                 image = Image.open(image_path)
-                plt.imshow(image)
-                plt.axis('off')  # Turn off axis
-                plt.title('Sample image with EXIF Data')
+
+                fig, (ax_image, ax_info) = plt.subplots(1, 2, figsize=(8, 3))  
+                ax_image.imshow(image)
+                ax_image.axis('off') 
+                ax_image.set_title('Sample image with EXIF Data')
 
                 # Annotate the plot with selected EXIF information
                 exif_text = '\n'.join([f"{tag} : {value}" for tag, value in selected_info.items()])
-                plt.annotate(exif_text, xy=(0.5, 0.5), xytext=(10, -10), fontsize=10,
-                            textcoords='offset points', ha='left', va='top', color='black',
-                            bbox=dict(boxstyle="round,pad=0.3", facecolor=(1, 1, 1, 0), edgecolor="black"))
+                ax_info.text(0, 1, exif_text, fontsize=10, color='black', verticalalignment='top')
+                ax_info.axis('off')
 
                 # save the image with selected exif data
-                plt.subplots_adjust(right=1)  # Adjust right margin to make space for annotation
-                plt.savefig(self.inspect_dir/os.path.basename(image_path), dpi=300) # dpi=300 for clear images
-                os.remove(image_path)
+                plt.savefig(self.inspect_dir/os.path.basename(image_path), dpi=200) # dpi=300 for clear images
+                plt.clf() # Clear the plot for the next image
+                plt.close(fig)
 
-            except Exception as e:
+                os.remove(image_path) # remove the temp image after plotting
+            except Warning as e:
                 log.error(f"Error plotting images for inspection {image_path}: {e}")
 
 def main(cfg: DictConfig) -> None:
