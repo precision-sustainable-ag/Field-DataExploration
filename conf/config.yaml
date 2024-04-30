@@ -17,6 +17,7 @@ pipeline:
     # - verify_container_images
     # - create_batches
     - report
+    - image_inspection
 
 
 general:
@@ -36,13 +37,15 @@ temp:
   temp_json_data: ${general.workdir}/tempdata/json_data
   temp_jpegs_data: ${general.workdir}/tempdata/jpeg_data
   final_json_dir: ${general.workdir}/tempdata/final_jsons
+  temp_image_dir: ${general.workdir}/tempdata/temp_images
 
 report:
   reportdir: ${general.workdir}/report
   report_plots: ${report.reportdir}/${job.job_now_date}/plots
+  inspectdir: ${report.reportdir}/${job.job_now_date}/inspection
   missing_batch_folders: ${report.reportdir}/${job.job_now_date}/missing_raws.csv
   uploads_7days: ${report.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
-  
+  capture_15days: ${report.reportdir}/${job.job_now_date}/num_captures_last_15days_by_state.csv #delete nav
 logs:
   logdir: ${general.workdir}/logging
 

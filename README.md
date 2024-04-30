@@ -72,3 +72,9 @@ Features of Note:
 
 ### `create_bathces`
 This scripts create batches by using the updated DateTime information from `append_datetime` , organizes raw images into "batches", and copies those image batches to the field-batches blob container. The script adjusts and groups images based on metadata into "batches" and filters out already processed or duplicate batches. Batch groupings are based on State, capture date, and 3 hour capture time intervals. It offers the flexibility to process data either concurrently or sequentially.
+### `image_inspection`
+
+This script is designed to facilitate the quality check process by performing the following functions:
+
+Random Image Selection: Automatically selects up to 15 images that have been uploaded in the past 15 days from a merged data table.
+Image Plotting with Metadata: For each selected image, the script generates a plot that includes the image itself along with key metadata fields. Plots are located in the `report/<date>/inspection` folder.
