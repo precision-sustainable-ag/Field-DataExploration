@@ -59,3 +59,11 @@ With the environment set up and activated, you can run the scripts provided in t
    ```bash
    python FIELD_REPORT.py
    ```
+
+### `image_inspection`
+
+This script is designed to facilitate the quality check process by performing the following functions:
+
+Random Image Selection: Automatically selects up to 15 images that have been uploaded in the past 15 days from a merged data table.
+Image Plotting with Metadata: For each selected image, the script generates a plot that includes the image itself along with key metadata fields. Plots are located in the `report/<date>/inspection` folder.
+
