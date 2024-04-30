@@ -93,7 +93,11 @@ class Backup:
         # Fetch all entities from the specified table
         entities = list(table_client.list_entities())
         # Convert entities to a list of dictionaries (assuming entities are not empty)
-        table_data = [entity for entity in entities]
+        table_data = []
+        for i in table_client.list_entities():
+            timestamp = str(i._metadata["timestamp"])
+            i["Timestamp"] = timestamp
+            table_data.append(i)
 
         if table_data:
             df_table_details = pd.DataFrame(table_data)
