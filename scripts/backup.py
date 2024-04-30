@@ -90,9 +90,7 @@ class Backup:
             endpoint=url_yamlkeys, credential=AzureSasCredential(read_yamlkeys)
         )
         table_client = table_service_client.get_table_client(table_name=table_name)
-        # Fetch all entities from the specified table
-        entities = list(table_client.list_entities())
-        # Convert entities to a list of dictionaries (assuming entities are not empty)
+        # Fetch all entities from the specified table and add timestamps
         table_data = []
         for i in table_client.list_entities():
             timestamp = str(i._metadata["timestamp"])
