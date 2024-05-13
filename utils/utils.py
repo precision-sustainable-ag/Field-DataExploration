@@ -3,6 +3,8 @@ import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import requests
+import re
 
 import exifread
 import pandas as pd
@@ -151,3 +153,34 @@ def download_azcopy_multiple(azuresrc, localdest, image_list):
     else:
         print("Error in copy operation")
         print(result.stderr)
+        
+def download_from_url(image_url: str, savedir: str = ".") -> None:
+    """Downloads an image from a URL and saves it to the specified directory."""
+    if not Path(savedir).exists():
+        Path(savedir).mkdir(exist_ok=True, parents=True)
+    fname = Path(image_url).name
+    fpath = Path(savedir, fname)
+    # Send a GET request to the image URL
+    response = requests.get(image_url)
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Open a file in binary write mode
+        with open(fpath, "wb") as file:
+            # Write the content of the response to the file
+            file.write(response.content)
+    else:
+        print(f"Failed to download image from {image_url}")
+
+def convert_datetime(dt):
+    if pd.isna(dt):
+        return dt  # Handle NaN values by returning them as-is
+    if is_wrong_format(dt):
+        # Convert from old format to new format
+        return datetime.strptime(dt, '%Y:%m:%d %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
+    return dt  # If it's not in the wrong format, return as-is
+    
+def is_wrong_format(dt_str):
+    # Check if the string matches the pattern YYYY:MM:DD
+    pattern = r'^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$'
+    return bool(re.match(pattern, dt_str))
