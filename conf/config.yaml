@@ -9,15 +9,14 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    # - wir_table_generator
-    # - wir_blob_data_generator
-    # - process_blob_analysis
-    # - process_tables_analysis
-    # - append_datetime
-    # - verify_container_images
+    - wir_table_generator
+    - wir_blob_data_generator
+    - process_blob_analysis
+    - process_tables_analysis
+    - append_datetime
     # - create_batches
-    - report
-    - image_inspection
+    # - report
+    # - image_inspection
 
 
 general:
