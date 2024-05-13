@@ -14,6 +14,7 @@ from utils.utils import (
     get_exif_data,
     read_csv_as_df,
     read_yaml,
+    convert_datetime
 )
 
 # Initialize logger
@@ -64,7 +65,7 @@ class AppendDateTimeToTable:
 
     def update_date_time(self, df: pd.DataFrame) -> pd.DataFrame:
         """Updates the 'CameraInfo_DateTime' and 'BatchID' fields based on 'CameraInfo_DateTime'."""
-        df['CameraInfo_DateTime'] = pd.to_datetime(df['CameraInfo_DateTime'], errors='coerce', format='%Y:%m:%d %H:%M:%S')
+        df['CameraInfo_DateTime'] = pd.to_datetime(df['CameraInfo_DateTime'], errors='coerce', format='%Y-%m-%d %H:%M:%S')
         for index, row in df.iterrows():
             if pd.isna(row['BatchID']) and not pd.isna(row['CameraInfo_DateTime']):
                 df.at[index, 'BatchID'] = f"{row['UsState']}_{row['CameraInfo_DateTime'].strftime('%Y-%m-%d')}"
@@ -188,6 +189,7 @@ class AppendDateTimeToTable:
     def save_updated_dataframe(self) -> None:
         # Saves the updated DataFrame to a CSV file.
         try:
+            self.df['CameraInfo_DateTime'] = self.df['CameraInfo_DateTime'].apply(convert_datetime)
             self.df.to_csv(self.csv_path, index=False)
             log.info("Today's DataFrame saved successfully to %s.", self.csv_path)
             self.df.to_csv(self.permanent_csv, index=False)
