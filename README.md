@@ -60,10 +60,21 @@ With the environment set up and activated, you can run the scripts provided in t
    python FIELD_REPORT.py
    ```
 
+## Major Scripts
+
+### `append_datetime`
+This script main purpose is to quickley get image DateTime information that can later be used to form batches. We quickley read jpg exif data to get capture datetime information, then remove the download jpg. We get the jpg from the azure blob container. This script appends date-time metadata extracted from the downloaded image EXIF data to an existing persistent CSV table. this is a crucial step that allows us to form "batches" for preprocessing. The script must be run before the "create_batches" task. If no new data is found, nothing happens. 
+
+Features of Note:
+   - The script finds the most recent "merged..." CSV file in "data/processed_data" and merges it with persistent data for continuous updates.
+   - It processes each JPG image to extract and append EXIF DateTime metadata to the relevant records in the CSV.
+   - Concurrency Handling: We use concurrent.futures and ThreadPoolExecutor for handling multiple downloads and reading of exif data at the same time.
+
+### `create_bathces`
+This scripts create batches by using the updated DateTime information from `append_datetime` , organizes raw images into "batches", and copies those image batches to the field-batches blob container. The script adjusts and groups images based on metadata into "batches" and filters out already processed or duplicate batches. Batch groupings are based on State, capture date, and 3 hour capture time intervals. It offers the flexibility to process data either concurrently or sequentially.
 ### `image_inspection`
 
 This script is designed to facilitate the quality check process by performing the following functions:
 
 Random Image Selection: Automatically selects up to 15 images that have been uploaded in the past 15 days from a merged data table.
 Image Plotting with Metadata: For each selected image, the script generates a plot that includes the image itself along with key metadata fields. Plots are located in the `report/<date>/inspection` folder.
-

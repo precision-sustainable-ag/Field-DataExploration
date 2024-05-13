@@ -9,15 +9,14 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    # - wir_table_generator
-    # - wir_blob_data_generator
-    # - process_blob_analysis
-    # - process_tables_analysis
-    # - append_datetime
-    # - verify_container_images
+    - wir_table_generator
+    - wir_blob_data_generator
+    - process_blob_analysis
+    - process_tables_analysis
+    - append_datetime
     # - create_batches
-    - report
-    - image_inspection
+    # - report
+    # - image_inspection
 
 
 general:
@@ -31,8 +30,8 @@ data:
   tablesdir: ${data.datadir}/tables/${job.job_now_date}
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
   processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
-  permanent_datadir: ${data.datadir}/permanent_tables
-  permanent_table: ${data.permanent_datadir}/merged_blobs_tables_metadata_permanent.csv
+  persistent_datadir: ${data.datadir}/persistent_tables
+
 temp:
   temp_json_data: ${general.workdir}/tempdata/json_data
   temp_jpegs_data: ${general.workdir}/tempdata/jpeg_data
