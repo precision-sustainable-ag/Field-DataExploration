@@ -13,7 +13,7 @@ pipeline:
     # - wir_blob_data_generator
     # - process_blob_analysis
     # - process_tables_analysis
-    - append_datetime
+    # - append_datetime
     # - create_batches
     - report
     # - image_inspection
@@ -44,10 +44,12 @@ temp:
 report:
   reportdir: ${general.workdir}/report
   report_plots: ${report.reportdir}/${job.job_now_date}/plots
+  plots_all_years: ${report.reportdir}/${job.job_now_date}/plots/plots_all_years
+  plots_current_season: ${report.reportdir}/${job.job_now_date}/plots/plots_current_season
   inspectdir: ${report.reportdir}/${job.job_now_date}/inspection
   missing_batch_folders: ${report.reportdir}/${job.job_now_date}/missing_raws.csv
   uploads_7days: ${report.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
-  capture_15days: ${report.reportdir}/${job.job_now_date}/num_captures_last_15days_by_state.csv #delete nav
+
 logs:
   logdir: ${general.workdir}/logging
 

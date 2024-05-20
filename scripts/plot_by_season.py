@@ -62,6 +62,9 @@ class PlotsBySeason:
         self.reportplot_dir = Path(self.cfg.report.report_plots)
         self.reportplot_dir.mkdir(exist_ok=True, parents=True)
 
+        self.plots_current_season = Path(self.cfg.report.plots_current_season)
+        self.plots_current_season.mkdir(exist_ok=True, parents=True)
+
     def add_season_column(self) -> pd.DataFrame:
         """
         Add a "Season" column to the data DataFrame based on the CameraInfo_DateTime and PlantType columns.
@@ -176,7 +179,7 @@ class PlotsBySeason:
                 ax.bar_label(bar_container, label_type='edge', padding=3, fontsize=7)
             
             fig.tight_layout()
-            save_path = f"{self.cfg.report.report_plots}/unique_masterrefids_by_state_and_planttype_current_season.png"
+            save_path = f"{self.cfg.report.plots_current_season}/unique_masterrefids_by_state_and_planttype_current_season.png"
             fig.savefig(save_path, dpi=300)
         
         log.info("Unique MasterRefIDs by state and plant type for current season plot saved.")
@@ -188,13 +191,11 @@ class PlotsBySeason:
         log.info("Generating bar plot for unique samples by species for the current season.")
         
         unique_ids_count = (
-            self.data_current_season.groupby(["UsState", "Species"])["MasterRefID"]
+            self.data_current_season.groupby(["Species"])["MasterRefID"]
             .nunique()
             .reset_index(name="sample_count")
             .sort_values(by="sample_count")
         )
-
-        log.debug(f"Unique IDs Count DataFrame with Color: {unique_ids_count.head()}")
 
         # Plotting
         with plt.style.context("ggplot"):
@@ -214,7 +215,7 @@ class PlotsBySeason:
             ax.set_ylabel("Number of Unique Samples")
             ax.set_xlabel("Species")
             ax.text(0.5, -0.25, "$^{*}$HasMatchingJpgAndRaw = True", ha='center', fontsize=9, transform=ax.transAxes)
-            ax.set_title(f"{self.current_year} Samples by Species and Plant Type")
+            ax.set_title(f"{self.current_year} Samples by Species")
 
             # Adding the number of samples on top of each bar
             for bar in bars:
@@ -228,7 +229,7 @@ class PlotsBySeason:
                 )
 
             fig.tight_layout()
-            save_path = f"{self.cfg.report.report_plots}/unique_masterrefids_by_species_and_planttype_current_season.png"
+            save_path = f"{self.cfg.report.plots_current_season}/unique_masterrefids_by_species_current_season.png"
             fig.savefig(save_path, dpi=300)
         log.info("Species distribution for current season plot saved.")
 
@@ -269,7 +270,7 @@ class PlotsBySeason:
             ax.legend(title="Image Type")
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.report_plots}/image_vs_raws_by_species_current_season.png"
+                f"{self.cfg.report.plots_current_season}/image_vs_raws_by_species_current_season.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Jpg vs Raws plot saved for current season.")
