@@ -15,7 +15,7 @@ pipeline:
     # - process_tables_analysis
     # - append_datetime
     # - create_batches
-    - report
+    # - report
     # - image_inspection
     - plot_by_season
 

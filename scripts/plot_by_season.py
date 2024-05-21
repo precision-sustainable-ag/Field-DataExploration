@@ -28,28 +28,16 @@ class PlotsBySeason:
         self.cfg = cfg
         self.csv_path = find_most_recent_data_csv(cfg.data.datadir)
         self.config_report_dir()
-        self.config_palettes()
         self.permanent_df = pd.read_csv(self.cfg.data.permanent_merged_table, low_memory=False)
-        self.data = self.permanent_df[self.permanent_df["HasMatchingJpgAndRaw"] == True].copy()
+        self.current_year = datetime.now().year
 
         # Convert date strings to datetime objects
         try:
-            self.data["CameraInfo_DateTime"] = pd.to_datetime(self.data["CameraInfo_DateTime"], format="%Y-%m-%d %H:%M:%S")
+            self.permanent_df["CameraInfo_DateTime"] = pd.to_datetime(self.permanent_df["CameraInfo_DateTime"], format="%Y-%m-%d %H:%M:%S")
         except Exception as e:
             log.warning(f"Error occurred while converting CameraInfo_DateTime: {e}. Dropping rows with invalid dates.")
-            self.data["CameraInfo_DateTime"] = pd.to_datetime(self.data["CameraInfo_DateTime"], errors='coerce', format="%Y-%m-%d %H:%M:%S")
-            self.data = self.data.dropna(subset=["CameraInfo_DateTime"])  # Drop rows with invalid dates
-
-    def config_palettes(self) -> None:
-        """
-        Configure the color palettes for different plant types.
-        """
-        log.debug("Configuring color palettes for plant types.")
-        self.planttype_palette = {
-            "WEEDS": "#55A868",
-            "COVERCROPS": "#4C72B0",
-            "CASHCROPS": "#C44E52",
-        }
+            self.permanent_df["CameraInfo_DateTime"] = pd.to_datetime(self.permanent_df["CameraInfo_DateTime"], errors='coerce', format="%Y-%m-%d %H:%M:%S")
+            self.permanent_df = self.permanent_df.dropna(subset=["CameraInfo_DateTime"])  # Drop rows with invalid dates
 
     def config_report_dir(self) -> None:
         """
@@ -73,73 +61,56 @@ class PlotsBySeason:
             pd.DataFrame: The updated DataFrame with the "Season" column added.
         """
         log.info("Adding 'Season' column to the data.")
-        self.data["Season"] = " "
-        for index, row in self.data.iterrows():
+        self.permanent_df["Season"] = " "
+        for index, row in self.permanent_df.iterrows():
             try:
                 plant_type = row["PlantType"]
                 date_time = row["CameraInfo_DateTime"]
                 if plant_type in ["WEEDS", "CASHCROPS"]:
-                    self.data.at[index, "Season"] = f"{date_time.year} {plant_type}"
+                    self.permanent_df.at[index, "Season"] = f"{date_time.year} {plant_type}"
                 else:
                     if date_time >= pd.Timestamp(year=date_time.year, month=10, day=1):
-                        self.data.at[index, "Season"] = f"{date_time.year}/{date_time.year + 1} {plant_type}"
+                        self.permanent_df.at[index, "Season"] = f"{date_time.year}/{date_time.year + 1} {plant_type}"
                     else:
-                        self.data.at[index, "Season"] = f"{date_time.year - 1}/{date_time.year} {plant_type}"
+                        self.permanent_df.at[index, "Season"] = f"{date_time.year - 1}/{date_time.year} {plant_type}"
             except Exception as e:
                 log.warning(f"Error processing row {index}: {e}")
-                self.data.at[index, "Season"] = np.nan
+                self.permanent_df.at[index, "Season"] = np.nan
 
-        self.current_year = datetime.now().year
         current_season_cover_crop = f"{self.current_year - 1}/{self.current_year} COVERCROPS"
         current_season_weeds = f"{self.current_year} WEEDS"
         current_season_cashcrops = f"{self.current_year} CASHCROPS"
 
         current_seasons = [current_season_cover_crop, current_season_weeds, current_season_cashcrops]
-        self.data_current_season = self.data[self.data["Season"].isin(current_seasons)]
+        data_current_season = self.permanent_df[self.permanent_df["Season"].isin(current_seasons)]
 
         log.info("Season column added successfully.")
-        return self.data_current_season
-
-
-    def tables_state_and_planttype_by_season(self) -> dict:
-        """
-        Generate a dictionary with years as keys and corresponding data as values.
-
-        Returns:
-            dict: Dictionary with years as keys and corresponding DataFrames as values.
-        """
-        log.info("Generating tables of state and plant type by season.")
-        data_by_year = {}
-        data_grouped_years = self.data.groupby("Season")
-
-        for year, group in data_grouped_years:
-            data_by_year[year] = group.reset_index(drop=True)
-
-        log.debug(f"Data grouped by season: {list(data_by_year.keys())}")
-        return data_by_year 
+        return data_current_season
         
-    def plot_unique_samples_state_plant_current_season(self) -> None:
+    def plot_unique_samples_state_plant_current_season(self, data_current_season) -> None:
         """
         Generate a bar plot showing the distribution of unique MasterRefIDs by state and plant type in the current season.
         """
         log.info("Generating bar plot for unique samples by state and plant type for the current season.")
-        
+
+        # DataFrame filtered for the rows with both jpg and raw
+        data = data_current_season[data_current_season["HasMatchingJpgAndRaw"] == True].copy() 
+
         # Define current season labels
-        current_year = self.current_year
-        last_year = current_year - 1
-        cover_crop_label = f"{last_year}/{current_year} COVERCROPS"
-        weeds_label = f"{current_year} WEEDS"
-        cash_crops_label = f"{current_year} CASHCROPS"
+        last_year = self.current_year - 1
+        cover_crop_label = f"{last_year}/{self.current_year} COVERCROPS"
+        weeds_label = f"{self.current_year} WEEDS"
+        cash_crops_label = f"{self.current_year} CASHCROPS"
         
         # Define plant type palette with new labels
-        self.planttype_palette = {
+        planttype_palette = {
             cover_crop_label: "#4C72B0",
             weeds_label: "#55A868",
             cash_crops_label: "#C44E52",
         }
         
         unique_ids_count = (
-            self.data_current_season.groupby(["UsState", "Season"])["MasterRefID"]
+            data.groupby(["UsState", "Season"])["MasterRefID"]
             .nunique()
             .reset_index()
         )
@@ -148,20 +119,19 @@ class PlotsBySeason:
         states_list = ["AL", "DV", "GA", "IL", "KS", "MD", "MS", "NC", "NC01", "TX", "TX01", "TX02", "VA"]
         existing_states = set(unique_ids_count["UsState"])
         missing_states = [state for state in states_list if state not in existing_states]
-        
         missing_states_df = pd.DataFrame({"UsState": missing_states})
-        self.unique_ids_count_all_states = pd.concat([unique_ids_count, missing_states_df], ignore_index=True).sort_values(by="UsState")
+        unique_ids_count_all_states = pd.concat([unique_ids_count, missing_states_df], ignore_index=True).sort_values(by="UsState")
         
         # Plotting
         with plt.style.context("ggplot"):
             fig, ax = plt.subplots(figsize=(12, 6))
             
             bar_plot = sns.barplot(
-                data=self.unique_ids_count_all_states,
+                data=unique_ids_count_all_states,
                 x="UsState",
                 y="MasterRefID",
                 hue="Season",
-                palette=self.planttype_palette,
+                palette=planttype_palette,
                 hue_order=[cover_crop_label, weeds_label, cash_crops_label],
                 ax=ax,
             )
@@ -184,14 +154,17 @@ class PlotsBySeason:
         
         log.info("Unique MasterRefIDs by state and plant type for current season plot saved.")
 
-    def plot_unique_samples_species_current_season(self) -> None:
+    def plot_unique_samples_species_current_season(self, data_current_season) -> None:
         """
         Generate a bar plot showing the distribution of unique MasterRefIDs by species in the current season.
         """
         log.info("Generating bar plot for unique samples by species for the current season.")
-        
+
+        # DataFrame filtered for the rows with both jpg and raw
+        data = data_current_season[data_current_season["HasMatchingJpgAndRaw"] == True].copy() 
+
         unique_ids_count = (
-            self.data_current_season.groupby(["Species"])["MasterRefID"]
+            data.groupby(["Species"])["MasterRefID"]
             .nunique()
             .reset_index(name="sample_count")
             .sort_values(by="sample_count")
@@ -233,10 +206,10 @@ class PlotsBySeason:
             fig.savefig(save_path, dpi=300)
         log.info("Species distribution for current season plot saved.")
 
-    def plot_image_vs_raws_by_species_current_season(self):
+    def plot_image_vs_raws_by_species_current_season(self, data_current_season):
         # Count the number of unique Images for each UsState and Extension
         unique_ids_count = (
-            self.data_current_season.groupby(["UsState", "Extension"])["Name"]
+            data_current_season.groupby(["UsState", "Extension"])["Name"]
             .nunique()
             .reset_index()
         )
@@ -247,14 +220,14 @@ class PlotsBySeason:
         missing_states = [state for state in states_list if state not in existing_states]
         
         missing_states_df = pd.DataFrame({"UsState": missing_states})
-        self.unique_ids_count_all_states = pd.concat([unique_ids_count, missing_states_df], ignore_index=True).sort_values(by="UsState")
+        unique_ids_count_all_states = pd.concat([unique_ids_count, missing_states_df], ignore_index=True).sort_values(by="UsState")
 
         # Plotting
         with plt.style.context("ggplot"):
             fig, ax = plt.subplots(figsize=(12, 6))
 
             sns.barplot(
-                data=self.unique_ids_count_all_states,
+                data=unique_ids_count_all_states,
                 x="UsState",
                 y="Name",
                 hue="Extension",
@@ -284,8 +257,8 @@ def main(cfg: DictConfig) -> None:
     """
     log.info(f"Starting task: {cfg.general.task}")
     plots_season = PlotsBySeason(cfg)
-    plots_season.add_season_column()
-    plots_season.plot_unique_samples_state_plant_current_season()
-    plots_season.plot_unique_samples_species_current_season()
-    plots_season.plot_image_vs_raws_by_species_current_season()
+    data_current_season = plots_season.add_season_column()
+    plots_season.plot_unique_samples_state_plant_current_season(data_current_season )
+    plots_season.plot_unique_samples_species_current_season(data_current_season )
+    plots_season.plot_image_vs_raws_by_species_current_season(data_current_season )
     log.info(f"Task {cfg.general.task} completed.")
