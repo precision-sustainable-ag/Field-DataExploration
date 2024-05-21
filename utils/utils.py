@@ -183,4 +183,4 @@ def convert_datetime(dt):
 def is_wrong_format(dt_str):
     # Check if the string matches the pattern YYYY:MM:DD
     pattern = r'^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$'
-    return bool(re.match(pattern, dt_str))
+    return bool(re.match(pattern, str(dt_str)))

@@ -195,7 +195,7 @@ class AppendDateTimeToTable:
             self.df.to_csv(self.permanent_csv, index=False)
             log.info("Persistent data DataFrame saved successfully to %s.", self.permanent_csv)
         except Exception as e:
-            log.error("Failed to save DataFrame to %s: %s", self.updated_csv_path, e, exc_info=True)
+            log.error("Failed to save DataFrame to %s: %s", self.csv_path, e, exc_info=True)
 
 
 def main(cfg: DictConfig) -> None:
