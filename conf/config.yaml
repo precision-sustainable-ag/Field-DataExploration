@@ -58,3 +58,18 @@ job:
   job_now_time: ${now:%H_%M_%S}
   job_now: ${job.job_now_date}/${job.job_now_time} 
   jobdir: ${data.datadir}/${job.job_now}
+
+state_list:
+  - AL
+  - DV
+  - GA
+  - IL
+  - KS
+  - MD
+  - MS
+  - NC
+  - NC01
+  - TX
+  - TX01
+  - TX02
+  - VA

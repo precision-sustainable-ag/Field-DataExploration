@@ -26,6 +26,7 @@ class PlotsBySeason:
         """
         log.debug("Initializing PlotsBySeason class.")
         self.cfg = cfg
+        self.state_list = cfg.state_list
         self.csv_path = find_most_recent_data_csv(cfg.data.datadir)
         self.config_report_dir()
         self.permanent_df = pd.read_csv(self.cfg.data.permanent_merged_table, low_memory=False)
@@ -215,9 +216,9 @@ class PlotsBySeason:
         )
 
          # Ensure all states are included in the plot
-        states_list = ["AL", "DV", "GA", "IL", "KS", "MD", "MS", "NC", "NC01", "TX", "TX01", "TX02", "VA"]
+         
         existing_states = set(unique_ids_count["UsState"])
-        missing_states = [state for state in states_list if state not in existing_states]
+        missing_states = [state for state in self.state_list if state not in existing_states]
         
         missing_states_df = pd.DataFrame({"UsState": missing_states})
         unique_ids_count_all_states = pd.concat([unique_ids_count, missing_states_df], ignore_index=True).sort_values(by="UsState")
