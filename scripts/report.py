@@ -41,11 +41,14 @@ class BatchReport:
         self.reportplot_dir = Path(self.cfg.report.report_plots)
         self.reportplot_dir.mkdir(exist_ok=True, parents=True)
 
+        self.plots_all_years = Path(self.cfg.report.plots_all_years)
+        self.plots_all_years.mkdir(exist_ok=True, parents=True)
+
     def read(self) -> pd.DataFrame:
         """Read and load data from a CSV file."""
         log.info("Reading and converting datetime columns in CSV")
         log.info(f"Reading path: {self.csv_path}")
-        df = pd.read_csv(self.csv_path, dtype={"SubBatchIndex": str})
+        df = pd.read_csv(self.csv_path, dtype={"SubBatchIndex": str}, low_memory=False)
 
         return df
 
@@ -137,7 +140,7 @@ class BatchReport:
             
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.report_plots}/unique_masterrefids_by_state_and_planttype.png"
+                f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_state_and_planttype.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Unique MasterRefIDs plot saved.")
@@ -171,7 +174,7 @@ class BatchReport:
             ax.legend(title="Image Type")
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.report_plots}/image_vs_raws_by_species.png"
+                f"{self.cfg.report.plots_all_years}/image_vs_raws_by_species.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Jpg vs Raws plot saved.")
@@ -220,7 +223,7 @@ class BatchReport:
             fig.tight_layout()
             # plt.subplots_adjust(top=0.93)
             save_path = (
-                f"{self.cfg.report.report_plots}/unique_masterrefids_by_species_and_planttype.png"
+                f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_species_and_planttype.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Species Distribution plot saved.")
@@ -266,7 +269,7 @@ class BatchReport:
 
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.report_plots}/unique_masterrefids_by_season.png"
+                f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_season.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Unique MasterRefIDs by Plant Type plot saved.")
@@ -312,7 +315,7 @@ class BatchReport:
 
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.report_plots}/unique_masterrefids_by_state.png"
+                f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_state.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Unique MasterRefIDs by UsState plot saved.")

@@ -9,14 +9,15 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    - wir_table_generator
-    - wir_blob_data_generator
-    - process_blob_analysis
-    - process_tables_analysis
-    - append_datetime
+    # - wir_table_generator
+    # - wir_blob_data_generator
+    # - process_blob_analysis
+    # - process_tables_analysis
+    # - append_datetime
     # - create_batches
     # - report
     # - image_inspection
+    - plot_by_season
 
 
 general:
@@ -31,6 +32,8 @@ data:
   blobsdir: ${data.datadir}/blobs/${job.job_now_date}
   processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
   persistent_datadir: ${data.datadir}/persistent_tables
+  permanent_merged_table: ${data.persistent_datadir}/merged_blobs_tables_metadata_permanent.csv
+
 
 temp:
   temp_json_data: ${general.workdir}/tempdata/json_data
@@ -41,10 +44,12 @@ temp:
 report:
   reportdir: ${general.workdir}/report
   report_plots: ${report.reportdir}/${job.job_now_date}/plots
+  plots_all_years: ${report.reportdir}/${job.job_now_date}/plots/plots_all_years
+  plots_current_season: ${report.reportdir}/${job.job_now_date}/plots/plots_current_season
   inspectdir: ${report.reportdir}/${job.job_now_date}/inspection
   missing_batch_folders: ${report.reportdir}/${job.job_now_date}/missing_raws.csv
   uploads_7days: ${report.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
-  capture_15days: ${report.reportdir}/${job.job_now_date}/num_captures_last_15days_by_state.csv #delete nav
+
 logs:
   logdir: ${general.workdir}/logging
 
@@ -53,3 +58,18 @@ job:
   job_now_time: ${now:%H_%M_%S}
   job_now: ${job.job_now_date}/${job.job_now_time} 
   jobdir: ${data.datadir}/${job.job_now}
+
+state_list:
+  - AL
+  - DV
+  - GA
+  - IL
+  - KS
+  - MD
+  - MS
+  - NC
+  - NC01
+  - TX
+  - TX01
+  - TX02
+  - VA
