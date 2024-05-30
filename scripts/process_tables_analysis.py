@@ -38,21 +38,28 @@ class WIRTablesPreProcessing:
         ## get csv data 
         self.wircovercropsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wircovercropsmeta_fname))
         self.wircovercropsmeta_df["wircovercropsmeta_RowKey"] = self.wircovercropsmeta_df["RowKey"]
-        self.wircovercropsmeta_df = self.wircovercropsmeta_df.drop(['RowKey',"PartitionKey","Affiliation"],axis=1)
+        self.wircovercropsmeta_df["wircovercropsmeta_Timestamp"] = self.wircovercropsmeta_df["Timestamp"]
+        self.wircovercropsmeta_df = self.wircovercropsmeta_df.drop(["RowKey","Timestamp", "PartitionKey","Affiliation"],axis=1)
 
         self.wircropsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wircropsmeta_fname))
         self.wircropsmeta_df["wircropsmeta_RowKey"] = self.wircropsmeta_df["RowKey"]
+        self.wircropsmeta_df["wircropsmeta_Timestamp"] = self.wircropsmeta_df["Timestamp"]
         self.wircropsmeta_df = self.wircropsmeta_df.drop('RowKey',axis=1)
+        self.wircropsmeta_df = self.wircropsmeta_df.drop('Timestamp',axis=1)
         # [Q: Check CropTypr for N/A values? fill nan if not required ]
 
         self.wirweedsmeta_df = read_csv_as_df(os.path.join(self.tables_dir,wirweedsmeta_fname))
         self.wirweedsmeta_df["wirweedsmeta_RowKey"] = self.wirweedsmeta_df["RowKey"]
+        self.wirweedsmeta_df["wirweedsmeta_Timestamp"] = self.wirweedsmeta_df["Timestamp"]
         self.wirweedsmeta_df = self.wirweedsmeta_df.drop('RowKey',axis=1)
+        self.wirweedsmeta_df = self.wirweedsmeta_df.drop('Timestamp',axis=1)
 
         self.wirmastermeta_df = read_csv_as_df(os.path.join(self.tables_dir,wirmastermeta_fname))
         self.wirmastermeta_df["wirmastermeta_RowKey"] = self.wirmastermeta_df["RowKey"]
+        self.wirmastermeta_df["wirmastermeta_Timestamp"] = self.wirmastermeta_df["Timestamp"]
         self.wirmastermeta_df.rename(columns={"RowKey": "MasterRefID"},inplace=True)
         self.wirmastermeta_df = self.wirmastermeta_df.drop('WeedsOrCrops',axis=1)
+        self.wirmastermeta_df = self.wirmastermeta_df.drop('Timestamp',axis=1)
 
         ## append filename of merged csv file
         self.processed_tables_dir = cfg.data.processed_datadir
@@ -151,7 +158,44 @@ class WIRTablesPreProcessing:
         processed_table['Species'] = processed_table['Species'].str.lower()
 
 
-        
+        cols = [
+            "Name",
+            "SizeMiB",
+            "UploadDateTimeUTC",
+            "MasterRefID",
+            "ImageURL",
+            "ImageIndex",
+            "UsState",
+            "PlantType",
+            "CloudCover",
+            "GroundResidue",
+            "GroundCover",
+            "Username",
+            "CoverCropFamily",
+            "GrowthStage",
+            "CottonVariety",
+            "CropOrFallow",
+            "CropTypeSecondary",
+            "Species",
+            "Height",
+            "SizeClass",
+            "FlowerFruitOrSeeds",
+            "BaseName",
+            "Extension",
+            "HasMatchingJpgAndRaw",
+            "Wirimagerefs_rowkey",
+            "Wirimagerefs_timestamp",
+            "Wirmastermeta_rowkey",
+            "Wirmastermeta_timestamp",
+            "Wircovercropsmeta_rowkey",
+            "Wircovercropsmeta_timestamp",
+            "Wircropsmeta_rowkey",
+            "Wircropsmeta_timestamp",
+            "Wirweedsmeta_rowkey",
+            "Wirweedsmeta_timestamp",
+            ]
+        processed_table = processed_table[cols]
+
         csv_path = Path(self.processed_tables_dir, self.wirmergedtable_fname)
         processed_table.to_csv(csv_path, index=False)
 

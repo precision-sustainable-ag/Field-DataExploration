@@ -47,6 +47,9 @@ class BlobTablePreProcessing:
     def preprocess_imgrefs(self,blobs_csv,imageref_df):
         # Get image names from urls and adding a new column
         imageref_df["name"] = imageref_df["ImageURL"].apply(lambda url:os.path.basename(url))
+        imageref_df["Wirimagerefs_rowkey"] = imageref_df["RowKey"]
+        imageref_df["Wirimagerefs_timestamp"] = imageref_df["Timestamp"]
+        imageref_df = imageref_df.drop('Timestamp',axis=1)
         # Left join on key = "name"
         processed_blobs = pd.merge(blobs_csv,imageref_df,on="name",how="left",left_index=False,right_index=False)
         # Get images that don't have MasterRefID
@@ -56,7 +59,6 @@ class BlobTablePreProcessing:
         # remove values with missing MasterRefID
         processed_blobs = processed_blobs[processed_blobs['MasterRefID'].notna()]
         # removing RowKey from merged csv
-        processed_blobs["wirimagerefs_rowkey"] = processed_blobs["RowKey"]
         processed_blobs = processed_blobs.drop('RowKey',axis=1)
         if processed_blobs.empty:
             log.error(f"processed_blobs df is empty, Not saving!")
