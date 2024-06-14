@@ -43,7 +43,7 @@ class AppendDateTimeToTable:
                 log.info("No new data to add to the persistent data table.")
                 return metadata_permanent_df  # If no new data, return the unchanged permanent DataFrame
             updated_metadata_permanent_df = self.append_new_data(metadata_permanent_df, rows_to_append)
-            updated_metadata_permanent_df = self.fill_in_jpg_raw_values(updated_metadata_permanent_df)
+            # updated_metadata_permanent_df = self.fill_in_jpg_raw_values(updated_metadata_permanent_df)
             updated_metadata_permanent_df = self.update_date_time(updated_metadata_permanent_df)
             return updated_metadata_permanent_df
         else:
