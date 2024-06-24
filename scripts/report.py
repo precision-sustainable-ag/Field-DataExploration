@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 from omegaconf import DictConfig
-
 from utils.utils import find_most_recent_data_csv
 
 log = logging.getLogger(__name__)
@@ -251,7 +250,7 @@ class BatchReport:
             log.info("Species Distribution plot saved.")
 
     def plot_sample_species_state_distribution(self):
-        data = self.df[self.df["HasMatchingJpgAndRaw"]]
+        data = self.df[self.df["HasMatchingJpgAndRaw"]==True]
         data = data[data["Extension"] == "arw"]
         data["UsState"] = data["UsState"].replace("NC01", "NC")
 
