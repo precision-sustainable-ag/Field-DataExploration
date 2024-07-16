@@ -41,29 +41,48 @@ class InsepctRecentUploads:
         self.inspect_dir.mkdir(exist_ok=True, parents=True)
 
     def download_images_temp(self) -> None:
-        """Download upto 15 random images chosen from last 15 days of uploads for all locations."""
-        df = self.df.copy()
+        """Download up to 5 random images from each state that uploaded in last 7 days."""
 
-        df['UploadDateTimeUTC'] = df['UploadDateTimeUTC'].str[:10]
-        df['upload_date'] = pd.to_datetime(df['UploadDateTimeUTC'], format='%Y-%m-%d')
+        df = self.df
         
+        # Extract the date from UploadDateTimeUTC
+        df['upload_date'] = pd.to_datetime(df['UploadDateTimeUTC'].str[:10], format='%Y-%m-%d')
+
+        # Define the date range for the last 7 days
         current_date_time = pd.to_datetime(datetime.now().date())
-        fifteen_days_ago = pd.to_datetime(current_date_time - timedelta(days=15)) #calculate date 15 days ago
+        seven_days_ago = current_date_time - timedelta(days=7)
 
-        df_last_15_days = df[(df['upload_date'] >= fifteen_days_ago) & (df['upload_date'] <= current_date_time)] # df with all columns for last 15 days of uploads
-        df_jpg_url = df_last_15_days[df_last_15_days['ImageURL'].str.endswith('.JPG')]
-
-        if len(df_jpg_url) < 15:
-            log.warning(f"Less than 15 images available. Randomly selecting {len(df_jpg_url)} images.")
-            random_imageurls = df_jpg_url['ImageURL'].sample(n=len(df_jpg_url)).tolist()  # Use all available images
-        else:
-            random_imageurls = df_jpg_url['ImageURL'].sample(n=15).tolist()  # Randomly select up to 15 images
-
-        random_imageurls = df_jpg_url['ImageURL'].sample(n=min(len(df_jpg_url), 15)).tolist() # generates a list of random URLs upto 15
+        # Filter the DataFrame for the last 7 days
+        df_last_7_days = df[(df['upload_date'] >= seven_days_ago) & (df['upload_date'] <= current_date_time)]
         
-        log.info(f"Temporary downloading random photos in {self.cfg.temp.temp_image_dir}")
-        [download_from_url(url, self.cfg.temp.temp_image_dir) for url in random_imageurls] # downloads the images in temp folder
+        if df_last_7_days.empty:
+            log.info("No uploads in the last 7 days.")
+            return
         
+        # Extract unique states
+        df_last_7_days_states = df_last_7_days["UsState"].unique()
+
+        log.info(f"Temporary downloading random photos from each state that uploaded in {self.cfg.temp.temp_image_dir}")
+
+        for state in df_last_7_days_states:
+            state_df = df_last_7_days[df_last_7_days["UsState"] == state]
+            jpg_df = state_df[state_df['ImageURL'].str.endswith('.JPG')]
+
+            if jpg_df.empty:
+                log.info(f"No .JPG images found for state: {state}")
+                continue
+
+            num_images = min(len(jpg_df), 5)
+            log.info(f"Selecting {num_images} images for state: {state}")
+
+            random_imageurls = jpg_df['ImageURL'].sample(n=num_images).tolist()
+
+            for url in random_imageurls:
+                try:
+                    download_from_url(url, self.cfg.temp.temp_image_dir)
+                except Exception as e:
+                    log.error(f"Failed to download image from {url}: {e}")        
+
     def plotting_sample_images_and_exif(self) -> None:    
         """ Plots sample images along with important EXIF information."""
         log.info(f"Plotting images with exif data of images selected for sampling")
