@@ -20,7 +20,88 @@ from utils.utils import (
 # Initialize logger
 log = logging.getLogger(__name__)
 
+class CameraInfoUpdater:
+    def __init__(self, df, extensions):
+        self.extensions = extensions
+        self.df = df
+        self.nan_caminfo_rows = None
+        self.jpg_pers = None
 
+    def load_and_clean_data(self):
+        """Load the CSV file and clean the 'Name' column by removing extensions."""
+        pattern = '|'.join(self.extensions)
+        self.df['Stem'] = self.df['Name'].str.replace(pattern, '', case=False, regex=True)
+
+    def separate_rows_by_nan(self, column):
+        """Separate rows into those with and without NaN in the specified column."""
+        not_nan_rows = self.df[~self.df[column].isna()].copy()
+        self.nan_caminfo_rows = self.df[self.df[column].isna()].copy()
+
+    def filter_jpg_images(self):
+        """Filter the DataFrame for JPEG images that match the given stems."""
+        missing_caminfo_stems = self.nan_caminfo_rows["Stem"]
+        jpg_df = self.df[self.df["Extension"].str.lower() == 'jpg'].copy()
+        self.jpg_pers = jpg_df[jpg_df["Stem"].isin(missing_caminfo_stems)].copy()
+
+    def merge_camera_info(self):
+        """Merge JPEG rows with missing CameraInfo rows based on the 'Stem' column."""
+        return self.nan_caminfo_rows.merge(self.jpg_pers[['Stem', 'CameraInfo_DateTime']], on='Stem', how='left')
+
+    def update_camera_info(self, merged_df):
+        """Update the 'CameraInfo_DateTime' in nan_caminfo_rows with values from merged_df."""
+        nan_caminfo_rows_copy = self.nan_caminfo_rows.copy()
+        nan_caminfo_rows_copy.loc[:, 'CameraInfo_DateTime'] = merged_df['CameraInfo_DateTime_y'].values
+        return nan_caminfo_rows_copy
+
+    def update_original_df(self, updated_nan_caminfo_rows):
+        """Update the original DataFrame with CameraInfo_DateTime from updated_nan_caminfo_rows."""
+        df_updated = self.df.copy()
+        # df_updated.set_index('Stem', inplace=True)
+        # updated_nan_caminfo_rows.set_index('Stem', inplace=True)
+        df_updated.update(updated_nan_caminfo_rows[['CameraInfo_DateTime']])
+        df_updated.reset_index(inplace=True)
+        return df_updated
+
+
+    def verify_updates(self, df_updated, original_nan_count, updated_nan_caminfo_rows):
+        """Verify that the updates were applied correctly."""
+        updated_nan_count = df_updated['CameraInfo_DateTime'].isna().sum()
+        print(f"Original NaN count: {original_nan_count}")
+        print(f"Updated NaN count: {updated_nan_count}")
+        
+        # Verify a few specific rows that were supposed to be updated
+        updated_rows = df_updated[df_updated['Stem'].isin(updated_nan_caminfo_rows.index)]
+        print("Sample of updated rows:")
+        print(updated_rows.head())
+        
+        # Additional check: how many NaN values were filled
+        filled_nan_count = original_nan_count - updated_nan_count
+        print(f"Number of NaN values filled: {filled_nan_count}")
+
+    def run(self):
+        # Load and clean data
+        self.load_and_clean_data()
+        
+        # Separate rows by NaN in 'CameraInfo_DateTime'
+        self.separate_rows_by_nan('CameraInfo_DateTime')
+        
+        # Filter JPEG images
+        self.filter_jpg_images()
+        
+        # Merge DataFrames
+        merged_df = self.merge_camera_info()
+        
+        # Update CameraInfo in nan_caminfo_rows
+        updated_nan_caminfo_rows = self.update_camera_info(merged_df)
+        
+        # Update the original DataFrame
+        original_nan_count = self.df['CameraInfo_DateTime'].isna().sum()
+        df_updated = self.update_original_df(updated_nan_caminfo_rows)
+        
+        # Verify updates
+        self.verify_updates(df_updated, original_nan_count, updated_nan_caminfo_rows)
+        return df_updated
+    
 class AppendDateTimeToTable:
     """Manages the process of appending date-time metadata to a CSV table from JPG EXIF data."""
     def __init__(self, cfg) -> None:
@@ -43,7 +124,7 @@ class AppendDateTimeToTable:
                 log.info("No new data to add to the persistent data table.")
                 return metadata_permanent_df  # If no new data, return the unchanged permanent DataFrame
             updated_metadata_permanent_df = self.append_new_data(metadata_permanent_df, rows_to_append)
-            # updated_metadata_permanent_df = self.fill_in_jpg_raw_values(updated_metadata_permanent_df)
+            updated_metadata_permanent_df = self.fill_in_jpg_raw_values(updated_metadata_permanent_df)
             updated_metadata_permanent_df = self.update_date_time(updated_metadata_permanent_df)
             return updated_metadata_permanent_df
         else:
@@ -75,17 +156,10 @@ class AppendDateTimeToTable:
         
     def fill_in_jpg_raw_values(self, df: pd.DataFrame) -> pd.DataFrame:
         """Fills missing values in ARW rows in the DataFrame by merging and filling in corresponding data from the JPG row."""
-        df_jpg_full = df[df['Name'].str.contains('.JPG')].copy()
-        # This merge will ensure that for ARW rows, missing data is filled from corresponding JPG rows without losing any rows
-        df_full_merged = df.merge(df_jpg_full[['BaseName', 'CameraInfo_DateTime', 'BatchID', 'SubBatchIndex']], on='BaseName', how='left', suffixes=('', '_from_jpg'))
-        # For ARW rows, fill in missing values from JPG rows where applicable
-        conditions = df_full_merged['Name'].str.contains('.ARW')
-        df_full_merged.loc[conditions, 'CameraInfo_DateTime'] = df_full_merged.loc[conditions, 'CameraInfo_DateTime'].fillna(df_full_merged['CameraInfo_DateTime_from_jpg'])
-        df_full_merged.loc[conditions, 'BatchID'] = df_full_merged.loc[conditions, 'BatchID'].fillna(df_full_merged['BatchID_from_jpg'])
-        df_full_merged.loc[conditions, 'SubBatchIndex'] = df_full_merged.loc[conditions, 'SubBatchIndex'].fillna(df_full_merged['SubBatchIndex_from_jpg'])
-        # Drop the temporary columns used for merging
-        df_full_merged.drop(['CameraInfo_DateTime_from_jpg', 'BatchID_from_jpg', 'SubBatchIndex_from_jpg'], axis=1, inplace=True)
-        return df_full_merged
+        # Use the CameraInfoUpdater to handle the filling in process
+        camera_info_updater = CameraInfoUpdater(df=df, extensions=['.jpg', '.arw', '.ARW', '.JPG'])
+        df_updated = camera_info_updater.run()
+        return df_updated
 
     def load_reference_df(self) -> pd.DataFrame:
         """Loads the reference DataFrame from permanent storage."""

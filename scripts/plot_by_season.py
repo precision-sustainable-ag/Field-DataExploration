@@ -222,12 +222,31 @@ class PlotsBySeason:
         missing_states_df = pd.DataFrame({"UsState": missing_states})
         unique_ids_count_all_states = pd.concat([unique_ids_count, missing_states_df], ignore_index=True).sort_values(by="UsState")
 
+        # Replace NaN values in 'Name' column with 0
+        unique_ids_count_all_states['Name'] = unique_ids_count_all_states['Name'].fillna(0)
+        # Replace NaN values in 'Extension' column with 'None'
+        unique_ids_count_all_states['Extension'] = unique_ids_count_all_states['Extension'].fillna('None')
+        # Duplicate rows with 'None' in 'Extension' column for both 'arw' and 'jpg' extensions with 0 values
+        df_with_duplicates = unique_ids_count_all_states[unique_ids_count_all_states['Extension'] == 'None'].copy()
+        df_with_duplicates['Extension'] = 'arw'
+        df_with_duplicates_jpg = df_with_duplicates.copy()
+        df_with_duplicates_jpg['Extension'] = 'jpg'
+
+        # Concatenate the original DataFrame with the duplicated rows
+        df_extended = pd.concat([unique_ids_count_all_states, df_with_duplicates, df_with_duplicates_jpg], ignore_index=True)
+
+        # Remove original 'None' extension rows
+        df_extended = df_extended[df_extended['Extension'] != 'None']
+
+        # Remove entries with 'NC01' in 'UsState' column
+        df_cleaned = df_extended[~df_extended['UsState'].isin(['NC01'])]
+
         # Plotting
         with plt.style.context("ggplot"):
             fig, ax = plt.subplots(figsize=(12, 6))
 
             sns.barplot(
-                data=unique_ids_count_all_states,
+                data=df_cleaned,
                 x="UsState",
                 y="Name",
                 hue="Extension",
