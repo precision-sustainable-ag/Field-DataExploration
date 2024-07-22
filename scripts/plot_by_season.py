@@ -184,10 +184,10 @@ class PlotsBySeason:
             )
 
             ax.set_xticks(x_positions)
-            ax.set_xticklabels(unique_ids_count["Species"], rotation=45)
+            ax.set_xticklabels(unique_ids_count["Species"], rotation=90)
             ax.set_ylabel("Number of Unique Samples")
             ax.set_xlabel("Species")
-            ax.text(0.5, -0.25, "$^{*}$HasMatchingJpgAndRaw = True", ha='center', fontsize=9, transform=ax.transAxes)
+            ax.text(0.5, 0.8, "$^{*}$HasMatchingJpgAndRaw = True", ha='center', fontsize=9, transform=ax.transAxes)
             ax.set_title(f"{self.current_year} Samples by Species")
 
             # Adding the number of samples on top of each bar
@@ -213,9 +213,13 @@ class PlotsBySeason:
             .nunique()
             .reset_index()
         )
+        unique_ids_count1 = (
+            data_current_season.groupby(["UsState", "Extension"])["Name"]
+            .nunique()
+            .reset_index()
+        ).fillna(0)
 
-         # Ensure all states are included in the plot
-         
+        # Ensure all states are included in the plot
         existing_states = set(unique_ids_count["UsState"])
         missing_states = [state for state in self.state_list if state not in existing_states]
         
@@ -262,7 +266,7 @@ class PlotsBySeason:
             ax.legend(title="Image Type")
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.plots_current_season}/image_vs_raws_by_species_current_season.png"
+                f"{self.cfg.report.plots_current_season}/image_jpgs_vs_raws_by_species_current_season.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Jpg vs Raws plot saved for current season.")
