@@ -59,6 +59,7 @@ class CameraInfoUpdater:
         # df_updated.set_index('Stem', inplace=True)
         # updated_nan_caminfo_rows.set_index('Stem', inplace=True)
         df_updated.update(updated_nan_caminfo_rows[['CameraInfo_DateTime']])
+        df_updated = df_updated.drop(columns=['index'])
         df_updated.reset_index(inplace=True)
         return df_updated
 
