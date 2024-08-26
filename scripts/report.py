@@ -249,6 +249,65 @@ class BatchReport:
             fig.savefig(save_path, dpi=300)
             log.info("Species Distribution plot saved.")
 
+    def plot_cumulative_samples_species_by_year(self):
+        # Filter data based on criteria
+        data = self.df[self.df["HasMatchingJpgAndRaw"] == True]
+        data = data[data["Extension"] == "arw"]
+        data["UsState"] = data["UsState"].replace("NC01", "NC")
+
+        # Extract year from CameraInfo_DateTime
+        data['CameraInfo_DateTime'] = pd.to_datetime(data['CameraInfo_DateTime'])
+        data['Year'] = data['CameraInfo_DateTime'].dt.year
+        # Replace 2021 with 2022 because of camera config/reset error
+        data['Year'] = data['Year'].replace(2021, 2022)
+        
+        
+
+        # Count unique MasterRefID for each combination of UsState, Species, and Year
+        samplecount_df = (
+            data.groupby(["UsState", "Species", "Year"])["MasterRefID"]
+            .nunique()
+            .reset_index(name="sample_count")
+            .sort_values(by="Year")
+        )
+
+        # Sort data by Year and calculate cumulative counts for each species
+        samplecount_df["cumulative_count"] = samplecount_df.groupby(["UsState", "Species"])["sample_count"].cumsum()
+
+        # Pivot the data for stacking bars by year
+        samplecount_pivot = samplecount_df.pivot_table(
+            index=["Species", "UsState"], columns="Year", values="sample_count", aggfunc="sum", fill_value=0
+        )
+
+        # Plot cumulative counts as stacked bar plots for each UsState
+        unique_states = samplecount_df["UsState"].unique()
+
+        for state in unique_states:
+            fig, ax = plt.subplots(figsize=(10, 7))
+            state_data = samplecount_pivot.xs(state, level="UsState")
+
+            # Plot stacked bars by year for each species
+            state_data.cumsum(axis=1).plot(
+                kind="barh", stacked=True, ax=ax, cmap="tab20"
+            )
+            
+
+            # Set labels and title
+            ax.set_xlabel("Cumulative Number of Unique Samples")
+            ax.set_ylabel("Species")
+            ax.set_title(f"Cumulative Samples by Species and Year: {state}", fontsize=18)
+
+            # Add legend and layout adjustments
+            ax.legend(title="Year", bbox_to_anchor=(1.05, 1), loc='upper left')
+            fig.tight_layout()
+
+            # Save plot
+            save_path = f"{self.cfg.report.plots_all_years}/cumulative_stacked_samples_by_species_for_{state}.png"
+            fig.savefig(save_path, dpi=300)
+            log.info(f"Cumulative Samples by Species plot saved for {state}.")
+            plt.close()
+
+
     def plot_sample_species_state_distribution(self):
         data = self.df[self.df["HasMatchingJpgAndRaw"]==True]
         data = data[data["Extension"] == "arw"]
@@ -304,6 +363,7 @@ class BatchReport:
             save_path = f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_species_for_{state}.png"
             fig.savefig(save_path, dpi=300)
             log.info("Species Distribution plot saved.")
+            plt.close()
 
     def plot_num_samples_season(self):
         """Generate a bar plot showing the distribution of unique MasterRefIDs by plant type."""
@@ -416,5 +476,6 @@ def main(cfg: DictConfig) -> None:
     batchrep.plot_num_samples_season()
     batchrep.plot_num_samples_usstate()
     batchrep.plot_sample_species_state_distribution()
+    batchrep.plot_cumulative_samples_species_by_year()
     batchrep.num_uploads_last_7days_by_state()
     log.info(f"{cfg.general.task} completed.")
