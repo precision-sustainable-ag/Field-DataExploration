@@ -278,6 +278,8 @@ class BatchReport:
         samplecount_pivot = samplecount_df.pivot_table(
             index=["Species", "UsState"], columns="Year", values="sample_count", aggfunc="sum", fill_value=0
         )
+        # Sort species names alphabetically
+        samplecount_pivot = samplecount_pivot.sort_index(level="Species")
 
         # Plot cumulative counts as stacked bar plots for each UsState
         unique_states = samplecount_df["UsState"].unique()
@@ -285,9 +287,10 @@ class BatchReport:
         for state in unique_states:
             fig, ax = plt.subplots(figsize=(10, 7))
             state_data = samplecount_pivot.xs(state, level="UsState")
+            state_data = state_data.sort_index(level="Species")
 
             # Plot stacked bars by year for each species
-            state_data.cumsum(axis=1).plot(
+            state_data.plot(
                 kind="barh", stacked=True, ax=ax, cmap="tab20"
             )
             
