@@ -1,15 +1,162 @@
+import re
 import logging
-from datetime import datetime, timedelta
-from pathlib import Path
-
-import matplotlib.pyplot as plt
 import pandas as pd
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Tuple
 import seaborn as sns
+import matplotlib.pyplot as plt
 from omegaconf import DictConfig
+
 from utils.utils import find_most_recent_data_csv
 
 log = logging.getLogger(__name__)
 
+class PreprocessingCheck:
+    """
+    A class to analyze image storage locations and extract information such as image counts and folder metadata.
+
+    Attributes:
+        storage_path (Path): The base path of the NFS storage to analyze.
+        save_table_path (Path): Path to save the CSV table of analysis results.
+        save_plot_dir (Path): Directory to save the generated plots.
+    """
+
+    def __init__(self, cfg: DictConfig) -> None:
+        """
+        Initializes PreprocessingCheck with the base path of the NFS storage.
+
+        Args:
+            cfg (DictConfig): Configuration object containing paths for data storage and report generation.
+        """
+        self.storage_path = Path(cfg.data.longterm_storage)
+        if not self.storage_path.exists():
+            log.error(f"Path {self.storage_path} does not exist.")
+            raise FileNotFoundError(f"Path {self.storage_path} does not exist.")
+        log.info(f"Initialized PreprocessingCheck for path: {self.storage_path}")
+        
+        # Save directory for table and plot
+        self.save_table_path = Path(cfg.report.preprocessing_analysis)  # Full path to save the table
+        self.save_plot_dir = Path(cfg.report.plots_all_years)  # Directory to save the plot
+
+    def analyze_directory(self) -> pd.DataFrame:
+        """
+        Analyze the NFS storage to count image files and gather metadata for each subfolder.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing folder metadata and image counts.
+        """
+        results = []
+        # Define pattern for folder names like 'TX_2024-07-07'
+        pattern = re.compile(r"^[A-Z]{2}_\d{4}-\d{2}-\d{2}$")
+        
+        for subdir in self.storage_path.iterdir():
+            if subdir.is_dir() and pattern.match(subdir.name):
+                jpg_count, raw_count = self._count_images(subdir)
+                folder_metadata = self._get_folder_metadata(subdir)
+                folder_data = {
+                    'FolderName': subdir.name,
+                    'JPGCount': jpg_count,
+                    'RAWCount': raw_count,
+                    'CreationDate': folder_metadata[0],
+                    'LastModifiedDate': folder_metadata[1]
+                }
+                results.append(folder_data)
+                log.info(f"Processed folder: {subdir.name} - JPG: {jpg_count}, RAW: {raw_count}")
+            else:
+                log.info(f"Skipped folder: {subdir.name} (does not match state abbreviation and date pattern)")
+        
+        # Convert results to a pandas DataFrame
+        df = pd.DataFrame(results)
+        log.info(f"Directory analysis completed. Processed {len(results)} folders.")
+        return df
+
+    def _count_images(self, folder: Path) -> Tuple[int, int]:
+        """
+        Count the number of JPG and RAW image files in a given folder.
+
+        Args:
+            folder (Path): The folder path to count images in.
+
+        Returns:
+            Tuple[int, int]: Number of JPG and RAW files in the folder.
+        """
+        jpg_count = sum(1 for f in folder.rglob('*.jpg'))
+        raw_count = sum(1 for f in folder.rglob('*.ARW'))
+        log.debug(f"Counted {jpg_count} JPG files and {raw_count} RAW files in folder: {folder}")
+        return jpg_count, raw_count
+
+    def _get_folder_metadata(self, folder: Path) -> Tuple[str, str]:
+        """
+        Retrieve the creation and last modified date of a folder.
+
+        Args:
+            folder (Path): The folder path to extract metadata from.
+
+        Returns:
+            Tuple[str, str]: The creation and last modified date of the folder in 'YYYY-MM-DD' format.
+        """
+        stat = folder.stat()
+        creation_date = datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d')
+        last_modified_date = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d')
+        log.debug(f"Retrieved metadata for folder {folder}: CreationDate={creation_date}, LastModifiedDate={last_modified_date}")
+        return creation_date, last_modified_date
+
+    def save_to_csv(self, df: pd.DataFrame) -> None:
+        """
+        Save the DataFrame containing folder analysis results to a CSV file.
+
+        Args:
+            df (pd.DataFrame): The DataFrame containing folder metadata and image counts.
+        """
+        df.to_csv(self.save_table_path, index=False)
+        log.info(f"Results saved to CSV: {self.save_table_path}")
+
+    def plot_batches_per_week(self, df: pd.DataFrame) -> None:
+        """
+        Plot the number of valid batches (folders where JPGCount equals RAWCount) created per week,
+        and add a text box listing batches where the counts don't match if there are any.
+        
+        Args:
+            df (pd.DataFrame): The DataFrame containing folder metadata, including 'LastModifiedDate'.
+        """
+        # Create a new column 'IsEqual' to check if JPGCount equals RAWCount
+        df['IsEqual'] = df['JPGCount'] == df['RAWCount']
+
+        # Filter based on the 'IsEqual' column
+        valid_folders = df.loc[df['IsEqual']].copy()
+        invalid_folders = df.loc[~df['IsEqual']]  # Folders where counts don't match
+
+        if not valid_folders.empty:
+            # Convert 'LastModifiedDate' to datetime and set it as index
+            valid_folders.loc[:, 'LastModifiedDate'] = pd.to_datetime(valid_folders['LastModifiedDate'])
+            valid_folders.set_index('LastModifiedDate', inplace=True)
+            
+            valid_folders.loc[:, 'WeekStart'] = valid_folders.index.to_period('W').start_time
+
+            # Group by week start date and count
+            batches_per_week = valid_folders.groupby('WeekStart').size().reset_index(name='BatchCount')
+            # Plot using Seaborn catplot
+            sns.catplot(x='WeekStart', y='BatchCount', data=batches_per_week, kind='bar', height=6, aspect=2)
+            plt.title('Number of Preprocessed Batches Created Per Week')
+            plt.xlabel('Week Start Date')
+            plt.ylabel('Number of Preprocessed Batches')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+
+            # If there are invalid folders, list them in a text box above the plot
+            if not invalid_folders.empty:
+                invalid_batch_list = "\n".join(invalid_folders['FolderName'].tolist())
+                plt.gcf().text(0.2, 0.95, f"Batches with unequal JPG and RAW counts:\n{invalid_batch_list}",
+                               ha='center', va='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.5))
+            
+            # Save the plot
+            save_path = Path(self.save_plot_dir, 'preprocessed_batches_per_week.png')
+            plt.savefig(save_path)
+            plt.close()
+            log.info(f"Plot saved to {save_path}")
+        else:
+            log.info("No valid folders to plot (no folders where JPGCount equals RAWCount).")
 
 class BatchReport:
     """A class to generate reports for Field data visualization,
@@ -481,4 +628,13 @@ def main(cfg: DictConfig) -> None:
     batchrep.plot_sample_species_state_distribution()
     batchrep.plot_cumulative_samples_species_by_year()
     batchrep.num_uploads_last_7days_by_state()
+    
+    # Start PreprocessingCheck
+    analyzer = PreprocessingCheck(cfg)
+    analysis_results_df = analyzer.analyze_directory()
+    # Plot batches per week
+    analyzer.plot_batches_per_week(analysis_results_df)
+    # Save preprocessed batches analysis results to CSV
+    analyzer.save_to_csv(analysis_results_df)
+    
     log.info(f"{cfg.general.task} completed.")

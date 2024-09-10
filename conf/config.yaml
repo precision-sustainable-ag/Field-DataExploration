@@ -33,6 +33,7 @@ data:
   processed_datadir: ${data.datadir}/processed_tables/${job.job_now_date}
   persistent_datadir: ${data.datadir}/persistent_tables
   permanent_merged_table: ${data.persistent_datadir}/merged_blobs_tables_metadata_permanent.csv
+  longterm_storage: /mnt/research-projects/r/raatwell/longterm_images3/field-batches
 
 
 temp:
@@ -49,6 +50,7 @@ report:
   inspectdir: ${report.reportdir}/${job.job_now_date}/inspection
   missing_batch_folders: ${report.reportdir}/${job.job_now_date}/missing_raws.csv
   uploads_7days: ${report.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
+  preprocessing_analysis: ${report.reportdir}/${job.job_now_date}/preprocessing_analysis.csv
 
 logs:
   logdir: ${general.workdir}/logging
