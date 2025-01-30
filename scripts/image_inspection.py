@@ -25,6 +25,9 @@ class InsepctRecentUploads:
         self.df = self.read()
         self.config_inspection_dir()
 
+        self.temp_image_dir = Path(self.cfg.temp.temp_image_dir)
+        self.temp_image_dir.mkdir(exist_ok=True, parents=True)
+
     def read(self) -> pd.DataFrame:
         """Read and load data from a CSV file."""
         log.info(f"Reading path: {self.csv_path}")
