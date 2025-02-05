@@ -28,6 +28,9 @@ class InsepctRecentUploads:
         self.temp_image_dir = Path(self.cfg.temp.temp_image_dir)
         self.temp_image_dir.mkdir(exist_ok=True, parents=True)
 
+        self.days = 180
+        self.num_images_to_inspect = 5
+
     def read(self) -> pd.DataFrame:
         """Read and load data from a CSV file."""
         log.info(f"Reading path: {self.csv_path}")
@@ -53,7 +56,7 @@ class InsepctRecentUploads:
 
         # Define the date range for the last 7 days
         current_date_time = pd.to_datetime(datetime.now().date())
-        seven_days_ago = current_date_time - timedelta(days=7)
+        seven_days_ago = current_date_time - timedelta(self.days)
 
         # Filter the DataFrame for the last 7 days
         df_last_7_days = df[(df['upload_date'] >= seven_days_ago) & (df['upload_date'] <= current_date_time)]
@@ -75,7 +78,7 @@ class InsepctRecentUploads:
                 log.info(f"No .JPG images found for state: {state}")
                 continue
 
-            num_images = min(len(jpg_df), 5)
+            num_images = min(len(jpg_df), self.num_images_to_inspect) # Select random images
             log.info(f"Selecting {num_images} images for state: {state}")
 
             random_imageurls = jpg_df['ImageURL'].sample(n=num_images).tolist()
