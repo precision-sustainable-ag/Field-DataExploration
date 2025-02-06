@@ -21,5 +21,5 @@ plots_all_years: ${paths.reportdir}/${job.job_now_date}/plots/plots_all_years
 plots_current_season: ${paths.reportdir}/${job.job_now_date}/plots/plots_current_season
 inspectdir: ${paths.reportdir}/${job.job_now_date}/inspection
 missing_batch_folders: ${paths.reportdir}/${job.job_now_date}/missing_raws.csv
-uploads_7days: ${paths.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
+uploads_selected_days: ${paths.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
 preprocessing_analysis: ${paths.reportdir}/${job.job_now_date}/preprocessing_analysis.csv

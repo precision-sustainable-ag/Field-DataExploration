@@ -1,6 +1,7 @@
-import logging
 import os
 import cv2
+import logging
+import shutil
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -91,11 +92,11 @@ class InsepctRecentUploads:
     def plotting_sample_images_and_exif(self) -> None:    
         """ Plots sample images along with important EXIF information."""
         log.info(f"Plotting images with exif data of images selected for sampling")
-
         try:
-            [os.remove(os.path.join(self.inspect_dir, file_name)) for file_name in os.listdir(self.inspect_dir)] 
+            # [os.remove(os.path.join(self.inspect_dir, folder_name)) for folder_name in os.listdir(self.inspect_dir)] 
+            [shutil.rmtree(os.path.join(self.inspect_dir, folder_name)) for folder_name in os.listdir(self.inspect_dir)] 
         except OSError as e:
-            log.error(f"Error while removing existing files: {e}")
+            log.error(f"Error while removing existing directories: {e}")
 
         temp_image_dir = self.cfg.paths.temp_image_dir
 
@@ -113,6 +114,7 @@ class InsepctRecentUploads:
                 selected_info = {tag: value for tag, value in exif_info.items() if tag in selected_tags}
                  
                 # Add additional information from df for the same image
+                selected_info['UsState'] = self.df.loc[self.df['Name']==image_name, 'UsState'].iloc[0]
                 selected_info['Username'] = self.df.loc[self.df['Name']==image_name, 'Username'].iloc[0]
                 selected_info['Species'] = self.df.loc[self.df['Name']==image_name, 'Species'].iloc[0]
                 selected_info['UploadDateTimeUTC'] = self.df.loc[self.df['Name']==image_name, 'UploadDateTimeUTC'].iloc[0]
@@ -131,8 +133,12 @@ class InsepctRecentUploads:
                 ax_info.text(0, 1, exif_text, fontsize=10, color='black', verticalalignment='top')
                 ax_info.axis('off')
 
+                # create folder with name of state
+                state_folder = os.path.join(self.inspect_dir, selected_info['UsState'])
+                os.makedirs(state_folder, exist_ok=True)
+
                 # save the image with selected exif data
-                plt.savefig(self.inspect_dir/os.path.basename(image_path), dpi=200) # dpi=300 for good quality images
+                plt.savefig(Path(state_folder)/os.path.basename(image_path), dpi=200) # dpi=300 for good quality images
                 plt.clf() # Clear the plot for the next image
                 plt.close(fig)
 

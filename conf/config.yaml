@@ -10,15 +10,15 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    # - wir_table_generator
-    # - wir_blob_data_generator
-    # - process_blob_analysis
-    # - process_tables_analysis
-    # - append_datetime
+    - wir_table_generator
+    - wir_blob_data_generator
+    - process_blob_analysis
+    - process_tables_analysis
+    - append_datetime
     # - create_batches
-    # - report
+    - report
     - image_inspection
-    # - plot_by_season
+    - plot_by_season
 
 general:
   task: # Leave empty as placeholder
@@ -28,7 +28,8 @@ pipeline_keys: ${general.workdir}/keys/authorized_keys.yaml
 
 inspection:
   num_past_days_to_inspect: 180
-  num_images_to_inspect: 5
+  num_past_days_for_report: 10
+  num_images_to_inspect: 10
 
 logs:
   logdir: ${general.workdir}/logging
