@@ -32,7 +32,7 @@ class TableExporter:
 
     def __init__(self, cfg: DictConfig) -> None:
         self.__auth_config_data = read_yaml(cfg.pipeline_keys)
-        self.tables_dir = cfg.data.tablesdir
+        self.tables_dir = cfg.paths.tablesdir
         Path(self.tables_dir).mkdir(exist_ok=True, parents=True)
 
     def get_table_data(self, account_url, sas_token, table_name):

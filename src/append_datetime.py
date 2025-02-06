@@ -108,8 +108,8 @@ class AppendDateTimeToTable:
     def __init__(self, cfg) -> None:
 
         self.keys = cfg.pipeline_keys
-        self.csv_path = Path(find_most_recent_data_csv(Path(cfg.data.datadir, "processed_tables"), "merged_blobs_tables_metadata.csv"))
-        self.permanent_csv = Path(cfg.data.persistent_datadir,"merged_blobs_tables_metadata_permanent.csv")
+        self.csv_path = Path(find_most_recent_data_csv(Path(cfg.paths.datadir, "processed_tables"), "merged_blobs_tables_metadata.csv"))
+        self.permanent_csv = Path(cfg.paths.persistent_datadir,"merged_blobs_tables_metadata_permanent.csv")
         self.df = self.preprocess_df()
         self.config_keys()
 

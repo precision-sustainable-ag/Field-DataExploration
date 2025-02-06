@@ -29,15 +29,15 @@ class PreprocessingCheck:
         Args:
             cfg (DictConfig): Configuration object containing paths for data storage and report generation.
         """
-        self.storage_path = Path(cfg.data.longterm_storage)
+        self.storage_path = Path(cfg.paths.longterm_storage)
         if not self.storage_path.exists():
             log.error(f"Path {self.storage_path} does not exist.")
             raise FileNotFoundError(f"Path {self.storage_path} does not exist.")
         log.info(f"Initialized PreprocessingCheck for path: {self.storage_path}")
         
         # Save directory for table and plot
-        self.save_table_path = Path(cfg.report.preprocessing_analysis)  # Full path to save the table
-        self.save_plot_dir = Path(cfg.report.plots_all_years)  # Directory to save the plot
+        self.save_table_path = Path(cfg.paths.preprocessing_analysis)  # Full path to save the table
+        self.save_plot_dir = Path(cfg.paths.plots_all_years)  # Directory to save the plot
 
     def analyze_directory(self) -> pd.DataFrame:
         """
@@ -166,11 +166,11 @@ class BatchReport:
     def __init__(self, cfg) -> None:
         """Initialize the BatchReport with configuration and data loading."""
         self.cfg = cfg
-        self.csv_path = find_most_recent_data_csv(cfg.data.datadir)
+        self.csv_path = find_most_recent_data_csv(cfg.paths.datadir)
         self.df = self.read()
         self.config_report_dir()
         self.config_palettes()
-        # self.cfg.reportdir = cfg.report.reportdir
+        self.num_past_days_for_report = cfg.inspection.num_past_days_for_report
 
     def config_palettes(self) -> None:
         """Configure the color palettes for different plant types."""
@@ -182,13 +182,13 @@ class BatchReport:
 
     def config_report_dir(self) -> None:
         """Configure and create necessary directories for report outputs."""
-        self.report_dir = Path(self.cfg.report.missing_batch_folders).parent
+        self.report_dir = Path(self.cfg.paths.missing_batch_folders).parent
         self.report_dir.mkdir(exist_ok=True, parents=True)
 
-        self.reportplot_dir = Path(self.cfg.report.report_plots)
+        self.reportplot_dir = Path(self.cfg.paths.report_plots)
         self.reportplot_dir.mkdir(exist_ok=True, parents=True)
 
-        self.plots_all_years = Path(self.cfg.report.plots_all_years)
+        self.plots_all_years = Path(self.cfg.paths.plots_all_years)
         self.plots_all_years.mkdir(exist_ok=True, parents=True)
 
     def read(self) -> pd.DataFrame:
@@ -225,30 +225,29 @@ class BatchReport:
         df["UploadDateUTC"] = df["UploadDateTimeUTC"].dt.date
         df = (
             df[df["HasMatchingJpgAndRaw"] == False][columns]
-            # .drop_duplicates(subset="Name")
             .reset_index(drop=True)
         )
-        df.to_csv(self.cfg.report.missing_batch_folders, index=False)
+        df.to_csv(self.cfg.paths.missing_batch_folders, index=False)
         log.info("Missing raws data written successfully.")
 
-    def num_uploads_last_7days_by_state(self):
-        """Creates a table of uploads from last 7 days by location in a csv format."""
+    def num_uploads_selected_days_by_state(self):
+        """Creates a table of uploads from last selected days by location in a csv format."""
 
         df = self.df.copy()
         df["UploadDateTimeUTC"] = pd.to_datetime(df["UploadDateTimeUTC"])
         df["UploadDateUTC"] = pd.to_datetime(df["UploadDateTimeUTC"].dt.date)
         current_date_time = pd.to_datetime(datetime.now().date())
-        seven_days_ago = pd.to_datetime(
-            current_date_time - timedelta(days=7)
-        )  # calculate date 7 days ago
+        selected_days_ago = pd.to_datetime(
+            current_date_time - timedelta(self.num_past_days_for_report)
+        )  # calculate date selected days ago
 
-        df_last_7_days = df[
-            (df["UploadDateUTC"] >= seven_days_ago)
+        df_last_selected_days = df[
+            (df["UploadDateUTC"] >= selected_days_ago)
             & (df["UploadDateUTC"] <= current_date_time)
-        ].copy()  # filter for last 7 days
-        df_last_7_days["IsDuplicated"] = df_last_7_days.duplicated("Name", keep=False)
-        grouped_df_last_7_days = (
-            df_last_7_days.groupby(
+        ].copy()  # filter for last selected days
+        df_last_selected_days["IsDuplicated"] = df_last_selected_days.duplicated("Name", keep=False)
+        grouped_df_last_selected_days = (
+            df_last_selected_days.groupby(
                 [
                     "UsState",
                     "PlantType",
@@ -262,8 +261,10 @@ class BatchReport:
             .reset_index(name="count")
         )
 
-        grouped_df_last_7_days.to_csv(self.cfg.report.uploads_7days, index=False)
-        log.info("Created table of uploads from last 7 days by location successfully.")
+        file_name = f"uploads_last_{self.num_past_days_for_report}_days_by_state.csv"
+        file_save_path = Path(self.cfg.paths.reportdir_timestamp, file_name)
+        grouped_df_last_selected_days.to_csv(file_save_path, index=False)
+        log.info(f"Created table of uploads from last {selected_days_ago} days by location successfully.")
 
     def plot_unique_masterrefids_by_state_and_planttype(self) -> None:
         """Generate a bar plot showing the distribution of unique MasterRefIDs by state and plant type."""
@@ -309,7 +310,7 @@ class BatchReport:
                 ax.bar_label(bar_container, label_type="edge", padding=3, fontsize=7)
 
             fig.tight_layout()
-            save_path = f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_state_and_planttype.png"
+            save_path = f"{self.cfg.paths.plots_all_years}/unique_masterrefids_by_state_and_planttype.png"
             fig.savefig(save_path, dpi=300)
             log.info("Unique MasterRefIDs plot saved.")
 
@@ -338,7 +339,7 @@ class BatchReport:
             ax.legend(title="Image Type")
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.plots_all_years}/image_vs_raws_by_species.png"
+                f"{self.cfg.paths.plots_all_years}/image_vs_raws_by_species.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Jpg vs Raws plot saved.")
@@ -392,7 +393,7 @@ class BatchReport:
                 )
             fig.tight_layout()
             # plt.subplots_adjust(top=0.93)
-            save_path = f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_species_and_planttype.png"
+            save_path = f"{self.cfg.paths.plots_all_years}/unique_masterrefids_by_species_and_planttype.png"
             fig.savefig(save_path, dpi=300)
             log.info("Species Distribution plot saved.")
 
@@ -452,7 +453,7 @@ class BatchReport:
             fig.tight_layout()
 
             # Save plot
-            save_path = f"{self.cfg.report.plots_all_years}/cumulative_stacked_samples_by_species_for_{state}.png"
+            save_path = f"{self.cfg.paths.plots_all_years}/cumulative_stacked_samples_by_species_for_{state}.png"
             fig.savefig(save_path, dpi=300)
             log.info(f"Cumulative Samples by Species plot saved for {state}.")
             plt.close()
@@ -509,8 +510,7 @@ class BatchReport:
             ax.figure.suptitle(f"Samples by Species: {state}", fontsize=18)
 
             fig.tight_layout()
-            # plt.subplots_adjust(top=0.93)
-            save_path = f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_species_for_{state}.png"
+            save_path = f"{self.cfg.paths.plots_all_years}/unique_masterrefids_by_species_for_{state}.png"
             fig.savefig(save_path, dpi=300)
             log.info("Species Distribution plot saved.")
             plt.close()
@@ -559,7 +559,7 @@ class BatchReport:
 
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_season.png"
+                f"{self.cfg.paths.plots_all_years}/unique_masterrefids_by_season.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Unique MasterRefIDs by Plant Type plot saved.")
@@ -608,7 +608,7 @@ class BatchReport:
 
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.plots_all_years}/unique_masterrefids_by_state.png"
+                f"{self.cfg.paths.plots_all_years}/unique_masterrefids_by_state.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Unique MasterRefIDs by UsState plot saved.")
@@ -627,7 +627,7 @@ def main(cfg: DictConfig) -> None:
     batchrep.plot_num_samples_usstate()
     batchrep.plot_sample_species_state_distribution()
     batchrep.plot_cumulative_samples_species_by_year()
-    batchrep.num_uploads_last_7days_by_state()
+    batchrep.num_uploads_selected_days_by_state()
     
     # Start PreprocessingCheck
     analyzer = PreprocessingCheck(cfg)

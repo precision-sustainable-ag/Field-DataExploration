@@ -32,7 +32,7 @@ class BlobMetricExporter:
 
     def __init__(self, cfg) -> None:
         self.__auth_config_data = read_yaml(cfg.pipeline_keys)
-        self.blobs_dir = cfg.data.blobsdir
+        self.blobs_dir = cfg.paths.blobsdir
         Path(self.blobs_dir).mkdir(exist_ok=True, parents=True)
 
     def get_blob_metrics(self, account_url, sas_token, container_name):

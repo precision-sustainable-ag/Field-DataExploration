@@ -68,9 +68,9 @@ class CreateBatchProcessor:
     """Processor for handling batch operations on images based on metadata and Azure Blob storage."""
     def __init__(self, cfg: DictConfig) -> None:
         self.ykeys = read_yaml(cfg.pipeline_keys)
-        self.datadir = Path(cfg.data.datadir, "processed_tables")
+        self.datadir = Path(cfg.paths.datadir, "processed_tables")
         self.csv_path = Path(find_most_recent_csv(self.datadir, "merged_blobs_tables_metadata.csv"))
-        self.permanent_csv = Path(cfg.data.persistent_datadir,"merged_blobs_tables_metadata_permanent.csv")
+        self.permanent_csv = Path(cfg.paths.persistent_datadir,"merged_blobs_tables_metadata_permanent.csv")
         self.file_path = "./tempoutputfieldbatches.txt"
         self.read_and_convert_datetime()
 
