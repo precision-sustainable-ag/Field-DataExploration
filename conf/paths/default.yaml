@@ -1,0 +1,25 @@
+workdir: ${hydra:runtime.cwd}  # where the code is executed
+# data
+datadir: ${paths.workdir}/data
+tablesdir: ${paths.datadir}/tables/${job.job_now_date}
+blobsdir: ${paths.datadir}/blobs/${job.job_now_date}
+processed_datadir: ${paths.datadir}/processed_tables/${job.job_now_date}
+persistent_datadir: ${paths.datadir}/persistent_tables
+permanent_merged_table: ${paths.persistent_datadir}/merged_blobs_tables_metadata_permanent.csv
+longterm_storage: /mnt/research-projects/r/raatwell/longterm_images3/field-batches
+
+# temp
+temp_json_data: ${paths.workdir}/tempdata/json_data
+temp_jpegs_data: ${paths.workdir}/tempdata/jpeg_data
+final_json_dir: ${paths.workdir}/tempdata/final_jsons
+temp_image_dir: ${paths.workdir}/tempdata/temp_images
+
+# report
+reportdir: ${paths.workdir}/report
+report_plots: ${paths.reportdir}/${job.job_now_date}/plots
+plots_all_years: ${paths.reportdir}/${job.job_now_date}/plots/plots_all_years
+plots_current_season: ${paths.reportdir}/${job.job_now_date}/plots/plots_current_season
+inspectdir: ${paths.reportdir}/${job.job_now_date}/inspection
+missing_batch_folders: ${paths.reportdir}/${job.job_now_date}/missing_raws.csv
+uploads_7days: ${paths.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
+preprocessing_analysis: ${paths.reportdir}/${job.job_now_date}/preprocessing_analysis.csv

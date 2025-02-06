@@ -24,13 +24,22 @@ class PlotsBySeason:
         Args:
             cfg (DictConfig): Configuration object with necessary settings.
         """
-        log.debug("Initializing PlotsBySeason class.")
-        self.cfg = cfg
+        log.info("Initializing PlotsBySeason class.")
         self.state_list = cfg.state_list
-        self.csv_path = find_most_recent_data_csv(cfg.data.datadir)
-        self.config_report_dir()
-        self.permanent_df = pd.read_csv(self.cfg.data.permanent_merged_table, low_memory=False)
+        self.csv_path = find_most_recent_data_csv(cfg.paths.datadir)
+        # self.config_report_dir()
+        self.permanent_df = pd.read_csv(cfg.paths.permanent_merged_table, low_memory=False)
         self.current_year = datetime.now().year
+
+        # Create directories for reports and plots
+        self.report_dir = Path(cfg.paths.missing_batch_folders).parent
+        self.report_dir.mkdir(exist_ok=True, parents=True)
+
+        self.reportplot_dir = Path(cfg.paths.report_plots)
+        self.reportplot_dir.mkdir(exist_ok=True, parents=True)
+
+        self.plots_current_season = Path(cfg.paths.plots_current_season)
+        self.plots_current_season.mkdir(exist_ok=True, parents=True)
 
         # Convert date strings to datetime objects
         try:
@@ -39,20 +48,6 @@ class PlotsBySeason:
             log.warning(f"Error occurred while converting CameraInfo_DateTime: {e}. Dropping rows with invalid dates.")
             self.permanent_df["CameraInfo_DateTime"] = pd.to_datetime(self.permanent_df["CameraInfo_DateTime"], errors='coerce', format="%Y-%m-%d %H:%M:%S")
             self.permanent_df = self.permanent_df.dropna(subset=["CameraInfo_DateTime"])  # Drop rows with invalid dates
-
-    def config_report_dir(self) -> None:
-        """
-        Configure and create necessary directories for report outputs.
-        """
-        log.debug("Configuring report directories.")
-        self.report_dir = Path(self.cfg.report.missing_batch_folders).parent
-        self.report_dir.mkdir(exist_ok=True, parents=True)
-
-        self.reportplot_dir = Path(self.cfg.report.report_plots)
-        self.reportplot_dir.mkdir(exist_ok=True, parents=True)
-
-        self.plots_current_season = Path(self.cfg.report.plots_current_season)
-        self.plots_current_season.mkdir(exist_ok=True, parents=True)
 
     def add_season_column(self) -> pd.DataFrame:
         """
@@ -149,7 +144,7 @@ class PlotsBySeason:
                 ax.bar_label(bar_container, label_type='edge', padding=3, fontsize=7)
             
             fig.tight_layout()
-            save_path = f"{self.cfg.report.plots_current_season}/unique_masterrefids_by_state_and_planttype_current_season.png"
+            save_path = f"{self.plots_current_season}/unique_masterrefids_by_state_and_planttype_current_season.png"
             fig.savefig(save_path, dpi=300)
         
         log.info("Unique MasterRefIDs by state and plant type for current season plot saved.")
@@ -202,7 +197,7 @@ class PlotsBySeason:
                 )
 
             fig.tight_layout()
-            save_path = f"{self.cfg.report.plots_current_season}/unique_masterrefids_by_species_current_season.png"
+            save_path = f"{self.plots_current_season}/unique_masterrefids_by_species_current_season.png"
             fig.savefig(save_path, dpi=300)
         log.info("Species distribution for current season plot saved.")
 
@@ -266,7 +261,7 @@ class PlotsBySeason:
             ax.legend(title="Image Type")
             fig.tight_layout()
             save_path = (
-                f"{self.cfg.report.plots_current_season}/image_jpgs_vs_raws_by_species_current_season.png"
+                f"{self.plots_current_season}/image_jpgs_vs_raws_by_species_current_season.png"
             )
             fig.savefig(save_path, dpi=300)
             log.info("Jpg vs Raws plot saved for current season.")
