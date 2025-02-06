@@ -225,14 +225,13 @@ class BatchReport:
         df["UploadDateUTC"] = df["UploadDateTimeUTC"].dt.date
         df = (
             df[df["HasMatchingJpgAndRaw"] == False][columns]
-            # .drop_duplicates(subset="Name")
             .reset_index(drop=True)
         )
         df.to_csv(self.cfg.paths.missing_batch_folders, index=False)
         log.info("Missing raws data written successfully.")
 
-    def num_uploads_last_7days_by_state(self):
-        """Creates a table of uploads from last __ selected days by location in a csv format."""
+    def num_uploads_selected_days_by_state(self):
+        """Creates a table of uploads from last selected days by location in a csv format."""
 
         df = self.df.copy()
         df["UploadDateTimeUTC"] = pd.to_datetime(df["UploadDateTimeUTC"])
@@ -240,12 +239,12 @@ class BatchReport:
         current_date_time = pd.to_datetime(datetime.now().date())
         selected_days_ago = pd.to_datetime(
             current_date_time - timedelta(self.num_past_days_for_report)
-        )  # calculate date 7 days ago
+        )  # calculate date selected days ago
 
         df_last_selected_days = df[
             (df["UploadDateUTC"] >= selected_days_ago)
             & (df["UploadDateUTC"] <= current_date_time)
-        ].copy()  # filter for last __ selected days
+        ].copy()  # filter for last selected days
         df_last_selected_days["IsDuplicated"] = df_last_selected_days.duplicated("Name", keep=False)
         grouped_df_last_selected_days = (
             df_last_selected_days.groupby(
@@ -262,8 +261,10 @@ class BatchReport:
             .reset_index(name="count")
         )
 
-        grouped_df_last_selected_days.to_csv(self.cfg.paths.uploads_selected_days, index=False)
-        log.info("Created table of uploads from last 7 days by location successfully.")
+        file_name = f"uploads_last_{self.num_past_days_for_report}_days_by_state.csv"
+        file_save_path = Path(self.cfg.paths.reportdir_timestamp, file_name)
+        grouped_df_last_selected_days.to_csv(file_save_path, index=False)
+        log.info(f"Created table of uploads from last {selected_days_ago} days by location successfully.")
 
     def plot_unique_masterrefids_by_state_and_planttype(self) -> None:
         """Generate a bar plot showing the distribution of unique MasterRefIDs by state and plant type."""
@@ -626,7 +627,7 @@ def main(cfg: DictConfig) -> None:
     batchrep.plot_num_samples_usstate()
     batchrep.plot_sample_species_state_distribution()
     batchrep.plot_cumulative_samples_species_by_year()
-    batchrep.num_uploads_last_7days_by_state()
+    batchrep.num_uploads_selected_days_by_state()
     
     # Start PreprocessingCheck
     analyzer = PreprocessingCheck(cfg)

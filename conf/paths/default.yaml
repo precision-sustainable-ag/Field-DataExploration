@@ -16,10 +16,10 @@ temp_image_dir: ${paths.workdir}/tempdata/temp_images
 
 # report
 reportdir: ${paths.workdir}/report
-report_plots: ${paths.reportdir}/${job.job_now_date}/plots
-plots_all_years: ${paths.reportdir}/${job.job_now_date}/plots/plots_all_years
-plots_current_season: ${paths.reportdir}/${job.job_now_date}/plots/plots_current_season
-inspectdir: ${paths.reportdir}/${job.job_now_date}/inspection
-missing_batch_folders: ${paths.reportdir}/${job.job_now_date}/missing_raws.csv
-uploads_selected_days: ${paths.reportdir}/${job.job_now_date}/num_uploads_last_7days_by_state.csv
-preprocessing_analysis: ${paths.reportdir}/${job.job_now_date}/preprocessing_analysis.csv
+reportdir_timestamp: ${paths.reportdir}/${job.job_now_date}
+report_plots: ${paths.reportdir_timestamp}/plots
+plots_all_years: ${paths.reportdir_timestamp}/plots/plots_all_years
+plots_current_season: ${paths.reportdir_timestamp}/plots/plots_current_season
+inspectdir: ${paths.reportdir_timestamp}/inspection
+missing_batch_folders: ${paths.reportdir_timestamp}/missing_raws.csv
+preprocessing_analysis: ${paths.reportdir_timestamp}/preprocessing_analysis.csv
