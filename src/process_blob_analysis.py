@@ -34,9 +34,9 @@ class BlobTablePreProcessing:
         table_fname = "wirimagerefs_table_metrics.csv"
         self.processed_blob_ref_fname = 'merged_blobs_tables_metadata.csv'
         self.missing_blob_fname = 'missing_blobs_metadata.csv'
-        self.blob_table_dir = cfg.data.blobsdir
-        self.refs_table_dir = cfg.data.tablesdir
-        self.processed_datadir = cfg.data.processed_datadir
+        self.blob_table_dir = cfg.paths.blobsdir
+        self.refs_table_dir = cfg.paths.tablesdir
+        self.processed_datadir = cfg.paths.processed_datadir
         Path(self.processed_datadir).mkdir(exist_ok=True, parents=True)
         self.blobs_csv = read_csv_as_df(os.path.join(self.blob_table_dir,blob_fname))
 

@@ -29,7 +29,7 @@ class WIRTablesPreProcessing:
     """
     def __init__(self, cfg: DictConfig) -> None:
         ## append filenames of relevant csv tables
-        self.tables_dir = cfg.data.tablesdir
+        self.tables_dir = cfg.paths.tablesdir
         wircovercropsmeta_fname = "wircovercropsmeta_table_metrics.csv"
         wircropsmeta_fname = "wircropsmeta_table_metrics.csv"
         wirweedsmeta_fname = "wirweedsmeta_table_metrics.csv"
@@ -62,7 +62,7 @@ class WIRTablesPreProcessing:
         self.wirmastermeta_df = self.wirmastermeta_df.drop('Timestamp',axis=1)
 
         ## append filename of merged csv file
-        self.processed_tables_dir = cfg.data.processed_datadir
+        self.processed_tables_dir = cfg.paths.processed_datadir
         self.wirmergedtable_fname = "merged_blobs_tables_metadata.csv"
         self.wirmergedtable_df = read_csv_as_df(os.path.join(self.processed_tables_dir,self.wirmergedtable_fname))
 
