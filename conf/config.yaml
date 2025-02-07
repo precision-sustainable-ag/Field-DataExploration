@@ -27,9 +27,9 @@ general:
 pipeline_keys: ${general.workdir}/keys/authorized_keys.yaml
 
 inspection:
-  num_past_days_to_inspect: 180
-  num_past_days_for_report: 10
-  num_images_to_inspect: 10
+  num_past_days_to_inspect: 7
+  num_past_days_for_report: 7
+  num_images_to_inspect: 50
 
 logs:
   logdir: ${general.workdir}/logging
