@@ -48,7 +48,33 @@ class PlotsBySeason:
             log.warning(f"Error occurred while converting CameraInfo_DateTime: {e}. Dropping rows with invalid dates.")
             self.permanent_df["CameraInfo_DateTime"] = pd.to_datetime(self.permanent_df["CameraInfo_DateTime"], errors='coerce', format="%Y-%m-%d %H:%M:%S")
             self.permanent_df = self.permanent_df.dropna(subset=["CameraInfo_DateTime"])  # Drop rows with invalid dates
+    
+    def fill_missing_camera_datetime(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Fill in missing CameraInfo_DateTime values by matching entries with the same 'Stem'.
+        Preference is given to JPG files with valid CameraInfo_DateTime.
+        """
+        # Step 1: Create a lookup table of non-null CameraInfo_DateTime by basename
+        datetime_lookup = df[
+            (df['CameraInfo_DateTime'].notnull()) & 
+            (df['Extension'].str.lower() == 'jpg')
+        ][['Stem', 'CameraInfo_DateTime']].drop_duplicates()
 
+        # Step 2: Merge this datetime into the rows with missing CameraInfo_DateTime
+        df_updated = df.copy()
+        df_updated = df_updated.merge(
+            datetime_lookup,
+            on='Stem',
+            how='left',
+            suffixes=('', '_from_jpg')
+        )
+
+        # Step 3: Fill missing CameraInfo_DateTime using the value from JPG
+        df_updated['CameraInfo_DateTime'] = df_updated['CameraInfo_DateTime'].fillna(df_updated['CameraInfo_DateTime_from_jpg'])
+        df_updated = df_updated.drop(columns=['CameraInfo_DateTime_from_jpg'])
+
+        return df_updated
+    
     def add_season_column(self) -> pd.DataFrame:
         """
         Add a "Season" column to the data DataFrame based on the CameraInfo_DateTime and PlantType columns.
@@ -57,6 +83,7 @@ class PlotsBySeason:
             pd.DataFrame: The updated DataFrame with the "Season" column added.
         """
         log.info("Adding 'Season' column to the data.")
+        self.permanent_df = self.fill_missing_camera_datetime(self.permanent_df)
         self.permanent_df["Season"] = " "
         for index, row in self.permanent_df.iterrows():
             try:
