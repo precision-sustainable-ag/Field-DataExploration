@@ -47,8 +47,8 @@ class PreprocessingCheck:
             pd.DataFrame: A DataFrame containing folder metadata and image counts.
         """
         results = []
-        # Define pattern for folder names like 'TX_2024-07-07'
-        pattern = re.compile(r"^[A-Z]{2}_\d{4}-\d{2}-\d{2}$")
+        # Define pattern for folder names like 'TX_2024-07-07' or 'TX01_2024-07-07'
+        pattern = re.compile(r"^[A-Z]{2}_\d{4}-\d{2}-\d{2}$|^[A-Z]{2}\d{2}_\d{4}-\d{2}-\d{2}$")
         
         for subdir in self.storage_path.iterdir():
             if subdir.is_dir() and pattern.match(subdir.name):
