@@ -123,9 +123,8 @@ class EXIFMetadataManager:
 
     def save_updated_dataframes(self, df: pd.DataFrame) -> None:
         """Saves updated DataFrame to all configured paths."""
-        df['CameraInfo_DateTime'] = df['CameraInfo_DateTime'].apply(convert_datetime)
         df.to_csv(self.csv_path, index=False)
-        df.to_csv(str(self.permanent_csv).replace(".csv", ".test.csv"), index=False)
+        df.to_csv(str(self.permanent_csv), index=False)
         log.info("Saved updated data to both %s and %s", self.csv_path, self.permanent_csv)
         log.info(f"Final DataFrame shape: {df.shape}")
         
