@@ -17,6 +17,7 @@ pipeline:
     - append_datetime
     - report
     - plot_by_season
+    - image_inspection
 
 general:
   task: # Leave empty as placeholder
