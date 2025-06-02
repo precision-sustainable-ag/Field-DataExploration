@@ -10,15 +10,13 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    # - wir_table_generator
-    # - wir_blob_data_generator
-    # - process_blob_analysis
-    # - process_tables_analysis
-    # - append_datetime
-    # - create_batches
+    - wir_table_generator
+    - wir_blob_data_generator
+    - process_blob_analysis
+    - process_tables_analysis
+    - append_datetime
     - report
-    # - image_inspection
-    # - plot_by_season
+    - plot_by_season
 
 general:
   task: # Leave empty as placeholder
