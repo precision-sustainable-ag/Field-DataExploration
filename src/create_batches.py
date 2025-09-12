@@ -144,14 +144,14 @@ class CreateBatchProcessor:
 
         self.df[["BatchID_y", "Subfolder1", "Subfolder2", "FName"]] = self.df['batches'].str.split('/', expand=True)
         self.df["BatchFolder"] = self.df["BatchID_y"] + "/" + self.df["Subfolder1"] + "/" + self.df["Subfolder2"]
-        
-        duplicate_batch_folders = self.df[self.df["BatchFolder"].isin(present_batches_df["BatchFolder"])]
-        if not duplicate_batch_folders.empty:
-            log.warning("Duplicate batch folders. Renaming the duplicates. Duplicates include...")
-            for index, row in duplicate_batch_folders.iterrows():
-                log.warning(f'{row["BatchFolder"]}/{row["FName"]}')
-            log.warning("Consider investiagting duplicate folders. Exiting.")
-            exit(0)
+
+        duplicate_image_names = self.df[self.df.duplicated(subset=['Name'], keep=False)]
+        if duplicate_image_names.empty:
+            log.info("No duplicates")
+        else:
+            log.error(f"Duplicates found in batch folders. Saving duplicates to 'duplicate_image_names.csv'")
+            duplicate_image_names.to_csv("duplicate_image_names.csv", index=False)
+            raise ValueError("Duplicates image names found in batch folders. Please resolve before proceeding.")
             
     def move_from_weeedsimagerepo2fieldbatches(self, batch: str) -> None:
         """Moves batches from the weeds image repository to field batches using azcopy."""
