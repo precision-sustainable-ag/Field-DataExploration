@@ -1,16 +1,18 @@
 # Refactor Progress
 
 Tracks what's been implemented against `refactor-plan.md`'s build order (section 5),
-and what's left. Sections 1–3 of the build order are done; this file is the detailed
-record of what changed and the plan for section 4 onward.
+and what's left. Sections 1–4 of the build order are done; this file is the detailed
+record of what changed and the plan for section 5 onward.
 
 All new code lives alongside the existing pipeline — nothing described below has
-modified or removed any existing script's behavior. `wir_table_generator.py` and
-`wir_blob_data_generator.py` are the only existing files whose *internals* changed
-(section 2), and they still produce byte-for-byte the same CSVs as before. Everything
-else (`process_blob_analysis.py`, `process_tables_analysis.py`, `create_batches.py`,
-`report.py`, `plot_by_season.py`, `append_datetime.py`, `image_inspection.py`) is
-untouched and still runs exactly as it did before this refactor started.
+changed any existing script's *behavior*. `wir_table_generator.py` and
+`wir_blob_data_generator.py` are the only files whose internals changed to become
+config-driven (section 2), and they still produce byte-for-byte the same CSVs as
+before. `create_batches.py` had two standalone bugs fixed and dead code removed
+(section 4), with no change to its batching behavior on real (non-buggy-input) data.
+Everything else (`process_blob_analysis.py`, `process_tables_analysis.py`, `report.py`,
+`plot_by_season.py`, `append_datetime.py`, `image_inspection.py`) is untouched and still
+runs exactly as it did before this refactor started.
 
 ---
 
@@ -178,53 +180,105 @@ session):**
 
 ---
 
-## What's next: section 4 onward
+## Section 4 — Batching against the DB (done)
 
-Per `refactor-plan.md` section 5's build order, remaining steps map to remaining plan
-sections as follows:
+**Goal (plan section 3.4, build order step 4):** rewrite `create_batches.py`'s batching
+logic against `images`/`samples`/`locations` in the DB instead of the CSV +
+`find_most_recent_csv`. This is the step that actually unlocks adding new locations
+cleanly — the original motivation for the whole refactor.
 
-### Section 4 — Batching against the DB (plan section 3.4)
+**What was built:**
 
-**This is the step that actually unlocks adding new locations cleanly** — the original
-motivation for the whole refactor.
+- `src/db/locations.py` — new module, three functions:
+  - `all_known_locations(conn)` — every `(code, display_name, parent_code)` row from
+    `locations`, as a list of `Location` namedtuples. Single source of truth for "what
+    locations exist," replacing ad hoc reads of `cfg.state_list`.
+  - `roll_up_to_parent(locations, code)` — maps a code to its `parent_code` if it has
+    one (e.g. `NC01` → `NC`), else returns it unchanged. One explicit decision point,
+    ready for section 5 to replace the three inconsistent `NC01` treatments in
+    `report.py`/`plot_by_season.py` (excluded entirely in one plot, renamed to `NC` in
+    two others, left alone elsewhere) — not yet wired in, since that's section 5's scope.
+  - `batch_folder_regex(locations)` — builds the batch-folder regex
+    (`^(?:TX02|TX01|NC01|...)_\d{4}-\d{2}-\d{2}$`) from the DB's actual location codes,
+    instead of a hardcoded `^[A-Z]{2}_\d{4}-\d{2}-\d{2}$|^[A-Z]{2}\d{2}_\d{4}-\d{2}-\d{2}$`
+    pattern that assumes every code is 2 letters or 2 letters + 2 digits. A new location
+    code of any shape works as soon as it's a row in `locations`. (This pattern
+    currently lives in `report.py`'s `PreprocessingCheck.analyze_directory` and
+    `blob2nfs.py`'s `is_batch_folder` — switching those callers over is section 5/later,
+    since `report.py`'s DB migration is explicitly scoped there.)
+- `src/create_batches_db.py` — new task module, not yet in `cfg.pipeline`:
+  - `DbBatchProcessor(CreateBatchProcessor)` — subclasses the existing processor and
+    overrides only `read_and_convert_datetime` to source the batch DataFrame from one
+    `images ⨝ samples` query instead of `find_most_recent_csv` + CSV read. Every other
+    step (`split_datetime`, `preprocess_df`, `adjust_groups`, `filter_batched_data`, the
+    azcopy move methods) is inherited unchanged, since they only ever operated on
+    `self.df` by column name. The DB's `exif_datetime` is already normalized at ingest
+    (`db/normalize.py`), so unlike the CSV path there's no `':'→'-'` regex pass needed.
+  - `warn_on_unknown_batch_labels()` — new method, uses `batch_folder_regex` to flag any
+    synthesized batch label whose location prefix isn't a known location code, replacing
+    the silent-skip failure mode called out in the plan (a bad location code previously
+    just vanished from batch folders with no error).
+  - `main(cfg)` mirrors `create_batches.py`'s `main()`, swapping in `DbBatchProcessor`;
+    run manually: `python main.py general.task=create_batches_db
+    +pipeline=[create_batches_db]`.
+- `src/create_batches.py` — fixed the two standalone bugs from plan section 4 while
+  touching this file, plus removed dead code:
+  - `row['Name'].replace('JPG', 'ARW')` was a case-sensitive substring replace; since
+    most `.JPG`s in the real data are uppercase but ~97/123,934 are lowercase `.jpg`,
+    those silently kept their original (wrong) extension in the synthesized RAW path.
+    Replaced with a new `jpg_name_to_arw()` helper using
+    `re.sub(r'\.jpg$', '.ARW', name, flags=re.IGNORECASE)` — always produces the
+    (verified) canonical uppercase `.ARW`, regardless of the JPG's case.
+  - `os.sched_getaffinity(0)` is Linux-only and crashes on macOS; guarded with
+    `hasattr(os, "sched_getaffinity")`, falling back to `os.cpu_count()`, and floored at
+    1 worker so a <3-core machine doesn't get `ThreadPoolExecutor(max_workers=0)`.
+  - Removed the unused `add_extra_number` method (confirmed no references anywhere in
+    the codebase before deleting).
 
-**Problems to fix (from plan section 3.4, confirmed by reading `create_batches.py`/
-`report.py` this session):**
-- `create_batches.py`'s batch-folder regex
-  (`^[A-Z]{2}_\d{4}-\d{2}-\d{2}$|^[A-Z]{2}\d{2}_\d{4}-\d{2}-\d{2}$`) hardcodes "2 letters,
-  optionally + 2 digits" — a new location naming convention breaks this silently
-  (folders just get skipped, no error).
-- `NC01` handling is inconsistent across the codebase: excluded entirely in
-  `plot_by_season.py`'s `plot_image_vs_raws_by_species_current_season`, renamed to `NC`
-  in `report.py`'s `plot_cumulative_samples_species_by_year` and
-  `plot_sample_species_state_distribution`, left alone in
-  `plot_unique_masterrefids_by_state_and_planttype`.
-- No single function every plot can call to backfill zero-count locations — each
-  plot (`report.py`, `plot_by_season.py`) independently decides whether to do this,
-  and they've drifted.
+**Verified (locally, without live Azure — no credentials needed since none of this
+touches blob storage):**
+- Ran the legacy CSV-driven `CreateBatchProcessor` and the new `DbBatchProcessor` side
+  by side against today's data (`CreateBatchProcessor` naturally fell back to the older
+  `merged_blobs_tables_metadata_permanent.csv`, since today's fresh
+  `merged_blobs_tables_metadata.csv` lacks `CameraInfo_DateTime` — `append_datetime` isn't
+  in `cfg.pipeline` this session — which is itself the existing fallback behavior, not
+  something this change touched).
+- Post `preprocess_df`/`adjust_groups`: legacy produced 101,333 batchable images, DB
+  produced 106,559. **Zero** images present in legacy but missing from the DB version —
+  the new pipeline is a strict superset here.
+- All 5,226 "DB-only" images traced to two already-documented staleness bugs in the old
+  permanent CSV snapshot the legacy path fell back to, not to anything new in this
+  change: 3,971 have a stale per-row `HasMatchingJpgAndRaw=False` (the same class of
+  bug section 3 documented at 699/229,840 rows — the DB recomputes this flag from the
+  full blob listing, so it doesn't inherit the staleness); 1,254 have a stale/missing
+  `UsState` in that older CSV snapshot that the DB's fresher merge has since filled in
+  (1 row unaccounted for, negligible).
+- Of the 101,333 batch-folder assignments in common, only 15 differ (all in two
+  state/date groups: `TX_2025-04-24`, `NC_2022-07-18`) — and in both cases the cause is
+  mechanical: the DB version correctly includes an earlier-timestamped image that
+  legacy's stale `HasMatchingJpgAndRaw` flag was wrongly excluding, which shifts the
+  3-hour-bucket ordinal (`SubBatchIndex`) for the group by one. Not a defect — the new
+  numbering reflects a more complete, more correct input set.
+- `warn_on_unknown_batch_labels()` logged zero warnings against the real DB — every
+  synthesized batch label matched a known location code, confirming the dynamic regex
+  works without false positives on real data.
+- `batch_folder_regex` spot-checked against `all_known_locations()` output: correctly
+  matches `TX_2024-07-07`, `TX01_2024-07-07`, `NC01_2023-05-01`, `DV_2024-07-07` and
+  rejects an unknown code (`ZZ_2024-01-01`).
 
-**Plan for this section:**
-1. Add a generic `all_known_locations(conn)` function (in `src/db/` or a new
-   `src/locations.py`) that returns every `code` from the `locations` table, with
-   `parent_code` available for callers that want to roll `NC01` up into `NC` — replacing
-   the three inconsistent ad hoc treatments with one explicit, callable decision point.
-2. Generate the batch-folder regex from the DB's actual location codes at runtime
-   (`locations` table, not a hand-written pattern) — a script/module reads
-   `SELECT code FROM locations` and builds the regex dynamically, so a new location code
-   with any shape just works.
-3. Rewrite `create_batches.py`'s batching logic against `images`/`samples`/`locations`
-   in the DB instead of the CSV + `find_most_recent_csv`, following the same
-   parallel-validation approach as sections 2–3 (new task module, not wired into
-   `cfg.pipeline` yet, diffed against the legacy batch folder output).
-4. Fix the two standalone bugs in `create_batches.py` while touching this file (plan
-   section 4's bug list): `row['Name'].replace('JPG', 'ARW')` is case-sensitive
-   (breaks on lowercase `.jpg`), and `os.sched_getaffinity(0)` is Linux-only (crashes on
-   macOS) — plus remove the unused `add_extra_number` dead code.
+Not run against live Azure in this session (no credentials in this environment) — the
+`FieldBatchLister`/azcopy move methods are unchanged from `create_batches.py` and were
+not touched by this section, so they carry no new risk beyond what already runs in
+production today.
 
-**Verification approach:** same pattern as sections 1–3 — run the new DB-driven
-batching alongside the legacy `create_batches.py`, diff the resulting batch
-folder/file assignments, and account for any discrepancies explicitly (as sections 2–3
-did) rather than assuming a mismatch is a defect.
+**Known gap, deferred to section 6:** `DbBatchProcessor` computes batch assignments
+in memory only, same as the legacy processor — it doesn't write anything back to
+`images.batch_id` or insert new `batches` rows. See section 6 below for the plan to
+close that once this becomes the live batching path.
+
+---
+
+## What's next: section 5 onward
 
 ### Section 5 — Reporting/plotting (plan sections 3.4 cont'd, 3.6)
 
@@ -257,6 +311,16 @@ pipeline (same diff-and-account approach used throughout). At that point:
 - `create_batches.py` is replaced by its DB-driven rewrite from section 4.
 - `find_most_recent_csv`/`find_most_recent_data_csv` in `utils/utils.py` become dead
   code and can be deleted.
+- **`images.batch_id` gets populated.** Section 4's `DbBatchProcessor` computes batch
+  folder assignments (`self.df['batches']`) purely in memory, to drive the azcopy move —
+  same as the legacy `CreateBatchProcessor` always did — and never writes them back to
+  the DB. Right now `batches` only has the 733 rows `migrate_to_db.py` backfilled from
+  the historical CSV's `BatchID` field (section 1); nothing keeps it current as new
+  images get batched. Once `create_batches_db.py` is the live batching path, it should
+  also upsert a `batches` row (`location_code`, `batch_label`, `batch_date`) for each
+  newly-assigned batch and set `images.batch_id` accordingly — reusing `upsert_batches`'s
+  label-parsing logic from `migrate_to_db.py` rather than duplicating it — so `images` is
+  always join-able to `batches`/`locations` without a separate CSV re-derivation step.
 
 ### Cross-cutting items not yet scheduled to a specific section
 
