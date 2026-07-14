@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 
 from db.connection import get_connection
 from db.normalize import normalize_datetime
-from db.upsert import upsert_locations
+from db.upsert import upsert_batches, upsert_locations
 from utils.utils import read_csv_as_df
 
 log = logging.getLogger(__name__)
@@ -92,45 +92,6 @@ def upsert_samples(conn, df: pd.DataFrame) -> int:
     )
     log.info(f"Upserted {len(rows)} samples")
     return len(rows)
-
-
-def upsert_batches(conn, df: pd.DataFrame) -> dict:
-    """Returns a mapping of batch_label -> batch id."""
-    known_codes = {row[0] for row in conn.execute("SELECT code FROM locations").fetchall()}
-    labels = df["BatchID"].dropna().unique().tolist()
-    rows = []
-    unknown_location_labels = []
-    for label in labels:
-        location_code, _, batch_date = label.rpartition("_")
-        if location_code not in known_codes:
-            unknown_location_labels.append(label)
-            location_code = None
-        rows.append((location_code, label, batch_date or None))
-
-    if unknown_location_labels:
-        log.warning(
-            f"{len(unknown_location_labels)} BatchID labels have a location prefix "
-            f"that isn't a known location code, storing with location_code=NULL: "
-            f"{unknown_location_labels[:10]}{'...' if len(unknown_location_labels) > 10 else ''}"
-        )
-
-    conn.executemany(
-        """
-        INSERT INTO batches (location_code, batch_label, batch_date)
-        VALUES (?, ?, ?)
-        ON CONFLICT(location_code, batch_date, batch_label) DO NOTHING
-        """,
-        rows,
-    )
-    log.info(f"Upserted {len(rows)} batches")
-
-    label_to_id = {
-        label: batch_id
-        for batch_id, label in conn.execute(
-            "SELECT id, batch_label FROM batches"
-        ).fetchall()
-    }
-    return label_to_id
 
 
 def upsert_images(conn, df: pd.DataFrame, batch_ids: dict) -> int:

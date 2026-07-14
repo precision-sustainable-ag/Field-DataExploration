@@ -1,18 +1,20 @@
 # Refactor Progress
 
-Tracks what's been implemented against `refactor-plan.md`'s build order (section 5),
-and what's left. Sections 1–4 of the build order are done; this file is the detailed
-record of what changed and the plan for section 5 onward.
+Tracks what's been implemented against `refactor-plan.md`'s build order (section 5).
+All 6 build-order steps are done — `cfg.pipeline` now runs the DB-driven path live
+(`merge_samples`, `append_datetime_db`, `report_db`; `create_batches_db` is built and
+validated but deliberately left commented out, see section 6). This file is the
+detailed record of what changed at each step and what's left as follow-up.
 
-All new code lives alongside the existing pipeline — nothing described below has
-changed any existing script's *behavior*. `wir_table_generator.py` and
-`wir_blob_data_generator.py` are the only files whose internals changed to become
-config-driven (section 2), and they still produce byte-for-byte the same CSVs as
-before. `create_batches.py` had two standalone bugs fixed and dead code removed
-(section 4), with no change to its batching behavior on real (non-buggy-input) data.
-Everything else (`process_blob_analysis.py`, `process_tables_analysis.py`, `report.py`,
-`plot_by_season.py`, `append_datetime.py`, `image_inspection.py`) is untouched and still
-runs exactly as it did before this refactor started.
+`wir_table_generator.py`/`wir_blob_data_generator.py` had their CSV-writing side
+removed in section 6 — CSV is no longer the pipeline's internal state, only the DB is.
+`create_batches.py` (section 4) and `image_inspection.py` (section 5) each got one
+standalone bug fixed in place (a case-sensitive JPG→ARW rename and a Linux-only
+`os.sched_getaffinity` call; a non-catching `except Warning` clause) — neither changes
+behavior on non-buggy inputs. The old CSV-chain files (`process_blob_analysis.py`,
+`process_tables_analysis.py`, `report.py`, `plot_by_season.py`, `create_batches.py`,
+`append_datetime.py`) are kept on disk but no longer referenced by `cfg.pipeline` —
+a deliberate choice (section 6) to keep a rollback path rather than delete them.
 
 ---
 
@@ -278,49 +280,261 @@ close that once this becomes the live batching path.
 
 ---
 
-## What's next: section 5 onward
+## Section 5 — Reporting/plotting (done)
 
-### Section 5 — Reporting/plotting (plan sections 3.4 cont'd, 3.6)
+**Goal (plan sections 3.4 cont'd, 3.6, build order step 5):** every plot in
+`report.py`/`plot_by_season.py` switches to `all_known_locations()`/`roll_up_to_parent()`
+(section 4) and the DB instead of `find_most_recent_csv`; deduplicate the near-identical
+plotting classes; fix the standalone `image_inspection.py` bug. Lowest risk, highest
+visibility — a checkpoint to confirm parity with current dashboards before retiring old
+code. Followed the same pattern as section 4: new modules, not wired into `cfg.pipeline`
+yet, validated against the legacy output.
 
-Lowest risk, highest visibility — a good checkpoint to confirm parity with current
-dashboards before retiring old code.
+**What was built:**
 
-1. Every plot in `report.py`/`plot_by_season.py` switches to `all_known_locations()`
-   (from section 4) for backfilling zero-count locations, and to the DB instead of
-   `find_most_recent_csv`.
-2. Deduplicate the near-identical plotting classes (plan section 3.6) — e.g.
-   `plot_unique_masterrefids_by_state_and_planttype` (all years) vs.
-   `plot_unique_samples_state_plant_current_season` (current season) are the same
-   matplotlib/seaborn logic differing only by a date filter. Extract one parameterized
-   function (`plot_unique_samples(df, groupby_cols, palette, title, save_path)`), call it
-   twice instead of maintaining two copies.
-3. Fix the standalone bug in `image_inspection.py` while touching this area: `except
-   Warning as e` doesn't catch real exceptions (`KeyError`/`IndexError`/
-   `FileNotFoundError`) — should be `except Exception`. Also remove the unused `cv2`
-   import.
+- `src/db/reporting.py` — `load_report_dataframe(conn)`, one `images ⨝ samples` query
+  covering every column `report.py`/`plot_by_season.py`/`image_inspection.py` actually
+  use (confirmed by grepping all three files for column references first). Unlike the
+  CSV chain, `CameraInfo_DateTime` is always populated here — it's normalized at ingest
+  (`db/normalize.py`), not bolted on later by a separate `append_datetime` run.
+- `src/plotting.py` — `plot_unique_samples(df, hue_col, palette, title, save_path,
+  known_states, hue_order)`, the parameterized function plan section 3.6 asks for.
+  Replaces `report.py`'s `plot_unique_masterrefids_by_state_and_planttype` and
+  `plot_by_season.py`'s `plot_unique_samples_state_plant_current_season` — identical
+  matplotlib/seaborn logic, differing only in `hue_col`/palette/title/save path. Also
+  fixes an inconsistency along the way: only the current-season version backfilled
+  missing states before; the shared function always does.
+- `src/report_db.py` — new task module, not yet in `cfg.pipeline`:
+  - `BatchReportDb` ports every `BatchReport` method (`write_missing_raws`,
+    `num_uploads_selected_days_by_state`, and all seven plots) onto
+    `load_report_dataframe()`. `UsState` is rolled up via `roll_up_to_parent()` **once**,
+    immediately after loading — this single line replaces the three inconsistent NC01
+    treatments the plan called out (left alone in
+    `plot_unique_masterrefids_by_state_and_planttype`, renamed to `NC` in
+    `plot_cumulative_samples_species_by_year`/`plot_sample_species_state_distribution`),
+    since every downstream method just sees `NC` and never has to know `NC01` existed.
+    `plot_image_vs_raws_by_species` and `plot_num_samples_usstate` gained backfill via
+    `known_states` (from `all_known_locations()`) — legacy never backfilled either.
+  - `PreprocessingCheckDb` subclasses `report.py`'s `PreprocessingCheck` (same pattern as
+    section 4's `DbBatchProcessor`), overriding only `analyze_directory` to build its
+    folder-matching pattern from `batch_folder_regex(all_known_locations(conn))` instead
+    of the hardcoded `^[A-Z]{2}_\d{4}-\d{2}-\d{2}$|^[A-Z]{2}\d{2}_\d{4}-\d{2}-\d{2}$`.
+  - Run manually: `python main.py general.task=report_db +pipeline=[report_db]`.
+- `src/plot_by_season_db.py` — new task module, not yet in `cfg.pipeline`:
+  `PlotsBySeasonDb` ports every `PlotsBySeason` method the same way. NC01 exclusion in
+  `plot_image_vs_raws_by_species_current_season` (`~df['UsState'].isin(['NC01'])`, the
+  third of the three inconsistent treatments) is gone — there's no more `NC01` in the
+  data by the time this method runs, it's already `NC`. Its convoluted duplicate-rows
+  backfill trick for missing state/extension combinations is replaced with the same
+  explicit missing-row construction `report_db.py`'s `plot_image_vs_raws_by_species`
+  uses. Run manually: `python main.py general.task=plot_by_season_db
+  +pipeline=[plot_by_season_db]`.
+- `src/image_inspection.py` — fixed directly (not part of the DB migration, this file
+  isn't a "plot" the plan asked to move): `except Warning as e` didn't catch real
+  exceptions (`KeyError`/`IndexError`/`FileNotFoundError`), so QA plotting didn't
+  actually fail gracefully as intended — changed to `except Exception as e`. Removed the
+  unused `cv2` import (confirmed no other use in the file before removing).
 
-### Section 6 — Retire old code
+**Verified (locally, against the real local DB and CSVs):**
+- `BatchReportDb`'s `MasterRefID` counts by `UsState`+`PlantType` and by `UsState` alone:
+  compared against the legacy `BatchReport` (same permanent-CSV-fallback situation as
+  section 4, since today's fresh dated CSV still lacks `CameraInfo_DateTime` this
+  session) with the same `roll_up_to_parent()` applied to both sides for a fair
+  comparison. Every state/plant-type combination matched exactly or the DB version was
+  higher, never lower — consistent with section 4's finding that the DB recomputes
+  `HasMatchingJpgAndRaw` correctly where the old CSV snapshot has stale per-row values.
+  `OH` was the largest gap (104 legacy vs. 305 DB) — traced precisely: the permanent CSV
+  has 4,090 `OH` rows, 305 distinct `MasterRefID`s total, but 2,010/4,090 rows have a
+  stale `HasMatchingJpgAndRaw=False`, undercounting legacy's per-state total down to 104.
+  305 matches the DB's recomputed count exactly.
+- `PreprocessingCheckDb`'s dynamically-generated regex vs. the legacy hardcoded one,
+  run against the real `longterm_storage` NFS directory (463 folders, no live Azure
+  needed): **identical** — 461 folders matched by both, zero folders only-in-legacy or
+  only-in-new.
+- Full smoke test: every method on `BatchReportDb`, `PlotsBySeasonDb`, and
+  `PreprocessingCheckDb` run end-to-end (outputs redirected to a scratch directory, nothing
+  written to the real `report/` folder) — no exceptions, all 32 expected plot/CSV files
+  produced. `PlotsBySeasonDb`'s current-season filter correctly produced 0 rows this
+  session — confirmed this reproduces identically against the legacy `PlotsBySeason`, so
+  it isn't a section 5 regression, but it isn't purely a date-environment artifact either:
+  see the `images.exif_datetime` backfill below, found while digging into this — it was
+  a real, independent cause of the same symptom, now closed.
 
-Only after sections 4–5's outputs are cross-checked against the legacy CSV-chain
-pipeline (same diff-and-account approach used throughout). At that point:
-- `wir_table_generator.py`/`wir_blob_data_generator.py` drop their CSV-writing side
-  (CSV becomes an on-demand export *from* the DB, not the pipeline's internal state —
-  plan section 3.2/6).
-- `process_blob_analysis.py`/`process_tables_analysis.py` are replaced by
-  `merge_samples.py` in `cfg.pipeline`.
-- `create_batches.py` is replaced by its DB-driven rewrite from section 4.
-- `find_most_recent_csv`/`find_most_recent_data_csv` in `utils/utils.py` become dead
-  code and can be deleted.
-- **`images.batch_id` gets populated.** Section 4's `DbBatchProcessor` computes batch
-  folder assignments (`self.df['batches']`) purely in memory, to drive the azcopy move —
-  same as the legacy `CreateBatchProcessor` always did — and never writes them back to
-  the DB. Right now `batches` only has the 733 rows `migrate_to_db.py` backfilled from
-  the historical CSV's `BatchID` field (section 1); nothing keeps it current as new
-  images get batched. Once `create_batches_db.py` is the live batching path, it should
-  also upsert a `batches` row (`location_code`, `batch_label`, `batch_date`) for each
-  newly-assigned batch and set `images.batch_id` accordingly — reusing `upsert_batches`'s
-  label-parsing logic from `migrate_to_db.py` rather than duplicating it — so `images` is
-  always join-able to `batches`/`locations` without a separate CSV re-derivation step.
+---
+
+## EXIF datetime backfill (done, gap found during section 5)
+
+**Goal:** close the gap found while investigating section 5's empty current-season
+plots — `images.exif_datetime` was only ever populated once, by section 1's historical
+migration; nothing added in sections 2–5 kept it current for newly-ingested images,
+since the only code that ever extracts it (`append_datetime.py`) isn't in
+`cfg.pipeline` and only ever wrote its results to CSVs, never the DB.
+
+**What was built:**
+
+- `src/db/upsert.py` — `update_image_exif_datetime(conn, {blob_name: datetime})`, a
+  small bulk `UPDATE`, added alongside the existing entity-scoped upserts.
+- `src/append_datetime_db.py` — new task module, not yet in `cfg.pipeline`. Three
+  passes over `images` where `exif_datetime IS NULL`, cheapest first:
+  1. **Stem lookup** — an image inherits `exif_datetime` from a sibling (same
+     `base_name`) JPG that already has one. Free, no network.
+  2. **EXIF download** — any JPG still missing it gets downloaded via `azcopy`
+     (`weedsimagerepo` credentials) and its EXIF `DateTimeOriginal` extracted, same
+     mechanism `append_datetime.py` uses, normalized through `db/normalize.py`'s
+     canonical `normalize_datetime()` instead of `append_datetime.py`'s own
+     duplicate implementation (`normalize_datetime_column`) — one of the three
+     duplicated datetime normalizers section 1 flagged, now down to two once
+     `append_datetime.py` itself is retired. Optionally capped per run via
+     `+exif_download_limit=N`, so a run doesn't have to download the entire backlog
+     at once.
+  3. **Second stem pass** — re-checks the still-missing set against datetimes
+     *just* downloaded in step 2, so an ARW whose sibling JPG was also missing
+     before this run still gets filled. `append_datetime.py` doesn't do this: its
+     single stem-fill call runs *before* the download step, so a pair that started
+     out both-missing only ever gets the JPG side backfilled there — a small
+     correctness improvement over legacy, not just a port.
+  - Run manually: `python main.py general.task=append_datetime_db
+    +pipeline=[append_datetime_db]`, optionally with `+exif_download_limit=N`.
+
+**Verified:** ran against a scratch copy of the real DB (never the live one — confirmed
+untouched after, still 12,533 `NULL` rows) with `exif_download_limit=5`:
+- 12,533 images missing `exif_datetime` at the start.
+- Stem lookup alone filled **9,328** — the large majority, for free.
+- 5 JPGs downloaded live via `azcopy` and had their EXIF extracted successfully (0
+  failures) — proves the live path works end-to-end, not just the stem-fill shortcut.
+- Second stem pass picked up 2 more (ARW siblings of those 5 JPGs).
+- Total: 9,335/12,533 filled in one capped run; 3,198 remain (963 of those are JPGs
+  eligible for download, the rest are images with no JPG sibling to inherit from and
+  no `image_url` recorded to download from — same ceiling legacy would hit).
+- Re-ran on the already-partially-filled scratch copy to confirm idempotency: second
+  run correctly found only the reduced remaining set, filled 5 more via download, 0
+  redundant work on the already-filled 9,335.
+
+**Not yet run against the real DB.** This was validated on a disposable copy on
+purpose — an unlimited real run means ~1,000+ live `azcopy` downloads, which takes
+real time and bandwidth against production blob storage. Whether to run it (and
+whether to cap it) is a call for whoever runs the pipeline, not something to do
+silently as a side effect of building the module.
+
+---
+
+## Section 6 — Retire old code (done)
+
+**Goal (build order step 6):** cross-check sections 4–5's outputs against the legacy
+CSV-chain pipeline (done, in each section's own write-up), then actually cut
+`cfg.pipeline` over to the DB-driven path.
+
+**Two decisions made explicitly with the user before touching the live pipeline
+config, since this is the step that changes what actually runs automatically:**
+1. `create_batches_db` stays **commented out** in `cfg.pipeline`, same as
+   `create_batches` was — it moves real blobs via `azcopy`, and enabling it wasn't
+   asked for. `append_datetime_db` **is** enabled — its live-download step is capped
+   per run via `+exif_download_limit=N` if ever needed, and the backlog is already
+   mostly drained (see the EXIF backfill section above).
+2. The old CSV-chain files (`report.py`, `process_blob_analysis.py`,
+   `process_tables_analysis.py`, `create_batches.py`, `plot_by_season.py`,
+   `append_datetime.py`) are kept on disk, just unreferenced by `cfg.pipeline` — not
+   deleted. Consequently `find_most_recent_csv`/`find_most_recent_data_csv` in
+   `utils/utils.py` are **not** dead code yet (`report.py`, `plot_by_season.py`, and
+   `create_batches.py` still call them) and were left alone rather than deleted per
+   the plan's literal text, which would have broken those files without actually
+   removing them.
+
+**What was built:**
+
+- `conf/config.yaml` — `pipeline:` now reads:
+  ```yaml
+  pipeline:
+      - wir_table_generator
+      - wir_blob_data_generator
+      - merge_samples
+      - append_datetime_db
+      - report_db
+      # - plot_by_season_db
+      # - image_inspection
+      # - create_batches_db
+  ```
+  `process_blob_analysis`/`process_tables_analysis` → `merge_samples`; `report` →
+  `report_db`; `append_datetime` (previously commented out) → `append_datetime_db`,
+  now enabled. `plot_by_season`/`image_inspection`/`create_batches` stay commented,
+  same as before, with their `_db` names substituted where one exists.
+- `src/wir_table_generator.py`/`src/wir_blob_data_generator.py` — dropped the
+  CSV-writing side (`to_csv`, the `tablesdir`/`blobsdir` directory creation, the
+  now-unused `pandas`/`Path` imports). Renamed `get_table_csv`/`get_blob_csv` →
+  `pull_and_upsert` on both exporter classes, since that's what they actually do now.
+  The DB upsert logic itself is untouched.
+- **`images.batch_id` gets populated** (closes the gap from section 4's write-up):
+  - `src/db/upsert.py` — moved `upsert_batches` here from `migrate_to_db.py` (same
+    move `build_locations`/`upsert_locations` made in section 3, for the same reason:
+    one implementation instead of two now that `create_batches_db.py` needs it too).
+    Added `update_image_batch_id(conn, {blob_name: batch_id})`, a small bulk update
+    alongside the existing `update_image_exif_datetime`.
+  - `src/create_batches_db.py` — new `DbBatchProcessor.persist_batches()`: derives a
+    `BatchID` column (`{UsState}_{date}`, same format `adjust_groups()` already builds
+    into the `batches` folder-path column), calls the now-shared `upsert_batches` to
+    get a `batch_label -> id` map, and sets `images.batch_id` for every row in the
+    *full* computed assignment — not just whatever `filter_batched_data` later decides
+    still needs an `azcopy` copy — so `images.batch_id` reflects batch membership
+    regardless of whether the physical copy has happened yet. Wired into `main()`
+    right after `adjust_groups()`/`warn_on_unknown_batch_labels()`, before
+    `filter_batched_data()`.
+  - `src/migrate_to_db.py` — now imports `upsert_batches` from `db/upsert.py` instead
+    of defining its own copy.
+
+**Verified (locally, against a scratch copy of the real DB — never the live one):**
+- `persist_batches()`: ran `DbBatchProcessor` through `adjust_groups()` and
+  `persist_batches()` (skipping `filter_batched_data`/the `azcopy` move, so nothing
+  live-Azure happens). `batches` went 733 → 739 rows; `images.batch_id` went from
+  219,404 already-set (from section 1's historical migration, which did set it from
+  the old CSV's `BatchID` column — the actual gap was only for images ingested
+  *since* that migration) to 219,875 (+471). The increase is smaller than the 12,533
+  images missing `exif_datetime` because `preprocess_df()` requires a non-null
+  `CameraInfo_DateTime` to be batchable at all — the EXIF and batch-id gaps are the
+  same underlying gap wearing two hats, and closing the EXIF one (previous session)
+  is what let most of these 471 become batchable in the first place.
+  - Idempotency: re-ran on the same scratch copy — `739`/`219,875` both unchanged,
+    zero redundant work.
+  - Cross-checked every `(image, batch)` pair's location against the image's own
+    `samples.location_code`: **1** mismatch out of ~471 newly-assigned
+    (`DSC00302.JPG`, assigned to an `MD` batch but linked to a `TX` sample) — a
+    pre-existing data inconsistency (a generic default camera filename, the same
+    class of issue the duplicate-image-name fix on this branch already deals with),
+    not something `persist_batches()` introduces. Not chased further given the
+    negligible rate; flagged here rather than silently ignored.
+- Ingestion CSV-removal: confirmed `TableExporter`/`BlobMetricExporter` construct
+  with no leftover `tables_dir`/`blobs_dir` attributes, and smoke-tested the actual
+  upsert call paths (`_upsert_entities`, `upsert_image_from_blob`) against a throwaway
+  DB with synthetic rows — both still upsert correctly. Didn't re-run a live Azure
+  pull for this, since the upsert functions themselves were already validated in
+  sections 2–3 and the only change here was removing the `to_csv` calls around them.
+
+**Not done:** the two files that keep `find_most_recent_csv`/`find_most_recent_data_csv`
+alive (`utils/utils.py`) — and the old CSV-chain files generally — are a deliberate
+non-goal here per the decisions above, not an oversight.
+
+---
+
+## Bug fix: PlantType palette crash (found via live `python main.py` run)
+
+Running the newly-live pipeline for real surfaced a genuine crash:
+`plot_unique_masterrefids_by_state_and_planttype` raised `ValueError: The palette
+dictionary is missing keys: {'SOILS'}`. `samples.plant_type` has two values the
+hardcoded 3-color palette (`WEEDS`/`COVERCROPS`/`CASHCROPS`) never anticipated:
+`SOILS` (11 samples) and `COTTONFLOWERS` (15). **Confirmed pre-existing, not a
+regression**: `report.py` has the exact same hardcoded dict at the exact same 3 call
+sites (`plot_unique_masterrefids_by_state_and_planttype`,
+`plot_sample_species_distribution`, `plot_sample_species_state_distribution`) — it
+would have crashed identically if ever run against data containing a SOILS/
+COTTONFLOWERS sample with a matching JPG/ARW pair.
+
+**Fix:** `src/plotting.py` gained `ensure_palette_covers(palette, values)` —
+extends a fixed hue palette with fallback colors (`seaborn`'s `tab10`) for any value
+actually present in the data but missing from the palette, instead of `seaborn`
+hard-crashing. Used inside `plot_unique_samples()` (covers both
+`report_db.py`'s and `plot_by_season_db.py`'s calls through it) and at
+`report_db.py`'s two remaining direct `sns.barplot(..., palette=self.planttype_palette)`
+call sites. Verified against the real DB: reproduces the exact `SOILS` warning
+(now a log line, not a crash) and all three plots complete.
 
 ### Cross-cutting items not yet scheduled to a specific section
 
@@ -343,8 +557,9 @@ section 4), not yet tackled:
   the blob-key schema) is rewritten in section 4, so both consumers can move to one
   schema together.
 - **Remaining standalone bugs (plan section 4)** not yet touched: the
-  `append_datetime.py` `ref_df.shape[0]` crash when `ref_df is None`, and the
-  `utils.utils.read_yaml`/`read_csv_as_df` pattern of catching any `Exception` and
-  re-raising a generic `FileNotFoundError` (hides the real error). Neither blocks
-  sections 4–6 and can be picked up whenever convenient, independent of this build
-  order.
+  `append_datetime.py` `ref_df.shape[0]` crash when `ref_df is None` (see also the
+  `images.exif_datetime` gap under section 6 above — same file, larger problem than
+  just this one crash), and the `utils.utils.read_yaml`/`read_csv_as_df` pattern of
+  catching any `Exception` and re-raising a generic `FileNotFoundError` (hides the real
+  error). Neither blocks sections 4–6 and can be picked up whenever convenient,
+  independent of this build order.
