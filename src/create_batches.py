@@ -64,6 +64,12 @@ def round_down_to_nearest_3_hours(dt: datetime) -> datetime:
     return dt.replace(hour=rounded_hour, minute=0, second=0, microsecond=0)
 
 
+def jpg_name_to_arw(jpg_name: str) -> str:
+    """Derives the corresponding RAW filename for a JPG blob name, matching '.jpg'
+    case-insensitively (source filenames are inconsistently '.JPG'/'.jpg')."""
+    return re.sub(r"\.jpg$", ".ARW", jpg_name, flags=re.IGNORECASE)
+
+
 class CreateBatchProcessor:
     """Processor for handling batch operations on images based on metadata and Azure Blob storage."""
     def __init__(self, cfg: DictConfig) -> None:
@@ -126,15 +132,10 @@ class CreateBatchProcessor:
         self.df['SubBatchIndex'] = self.df.sort_values(by=['ThreeHourlyGroup']).groupby(['UsState', 'CameraInfo_Date'])['ThreeHourlyGroup'].transform(lambda x: pd.factorize(x)[0] + 1)
         self.df['SubBatchIndex_Padded'] = self.df['SubBatchIndex'].apply(lambda x: f"{x:0{2}d}")
         self.df =  self.df.sort_values(by=["UsState", "CameraInfo_Date", "SubBatchIndex"])
-        self.df['batches'] = self.df.apply(lambda row: f"{row['UsState']}_{row['CameraInfo_Date'].strftime('%Y-%m-%d')}/raws/{row['SubBatchIndex_Padded']}/{row['Name'].replace('JPG', 'ARW')}", axis=1)
+        self.df['RawName'] = self.df['Name'].apply(jpg_name_to_arw)
+        self.df['batches'] = self.df.apply(lambda row: f"{row['UsState']}_{row['CameraInfo_Date'].strftime('%Y-%m-%d')}/raws/{row['SubBatchIndex_Padded']}/{row['RawName']}", axis=1)
         return self
 
-    def add_extra_number(self, cell_value):
-        """Increments the last number in the provided string by 1 after padding with zeros."""
-        last_number = int(cell_value[-1])
-        new_last_number = str(last_number + 1).zfill(len(cell_value))
-        return cell_value[:-1] + new_last_number
-    
     def filter_batched_data(self,present_batches_df):
         """Filters out already processed batches from the DataFrame and handles duplicate batches."""
         self.df = self.df[~self.df["BaseName"].isin(present_batches_df["BaseName"])]
@@ -180,7 +181,8 @@ class CreateBatchProcessor:
         """Processes the DataFrame using concurrency to handle multiple batches simultaneously."""
         log.info("Processing DataFrame with concurrency")
         batches = self.df["batches"].unique()
-        max_workers = int(len(os.sched_getaffinity(0)) / 3)
+        cpu_count = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+        max_workers = max(1, int(cpu_count / 3))
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(self.move_from_weeedsimagerepo2fieldbatches, batch) for batch in batches]
