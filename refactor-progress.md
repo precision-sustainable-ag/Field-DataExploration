@@ -8,13 +8,15 @@ detailed record of what changed at each step and what's left as follow-up.
 
 `wir_table_generator.py`/`wir_blob_data_generator.py` had their CSV-writing side
 removed in section 6 — CSV is no longer the pipeline's internal state, only the DB is.
-`create_batches.py` (section 4) and `image_inspection.py` (section 5) each got one
-standalone bug fixed in place (a case-sensitive JPG→ARW rename and a Linux-only
-`os.sched_getaffinity` call; a non-catching `except Warning` clause) — neither changes
-behavior on non-buggy inputs. The old CSV-chain files (`process_blob_analysis.py`,
-`process_tables_analysis.py`, `report.py`, `plot_by_season.py`, `create_batches.py`,
-`append_datetime.py`) are kept on disk but no longer referenced by `cfg.pipeline` —
-a deliberate choice (section 6) to keep a rollback path rather than delete them.
+`image_inspection.py` (section 5) got one standalone bug fixed in place (a
+non-catching `except Warning` clause) — doesn't change behavior on non-buggy inputs.
+The old CSV-chain files (`process_blob_analysis.py`, `process_tables_analysis.py`,
+`report.py`, `plot_by_season.py`, `create_batches.py`, `append_datetime.py`) were
+initially kept on disk unreferenced (section 6's original choice), then actually
+deleted once asked for explicitly — see "Deleting the old CSV-chain scripts" below.
+The `create_batches.py` bug fixes from section 4 (case-sensitive JPG→ARW rename,
+Linux-only `os.sched_getaffinity`) now live in `create_batches_db.py`, which absorbed
+that file's logic before it was deleted.
 
 ---
 
@@ -433,12 +435,10 @@ config, since this is the step that changes what actually runs automatically:**
    mostly drained (see the EXIF backfill section above).
 2. The old CSV-chain files (`report.py`, `process_blob_analysis.py`,
    `process_tables_analysis.py`, `create_batches.py`, `plot_by_season.py`,
-   `append_datetime.py`) are kept on disk, just unreferenced by `cfg.pipeline` — not
-   deleted. Consequently `find_most_recent_csv`/`find_most_recent_data_csv` in
-   `utils/utils.py` are **not** dead code yet (`report.py`, `plot_by_season.py`, and
-   `create_batches.py` still call them) and were left alone rather than deleted per
-   the plan's literal text, which would have broken those files without actually
-   removing them.
+   `append_datetime.py`) were initially kept on disk, just unreferenced by
+   `cfg.pipeline` — not deleted, to preserve a rollback path. **Superseded shortly
+   after** — see "Deleting the old CSV-chain scripts" below, once the DB-driven path
+   had run live and the rollback path was no longer wanted.
 
 **What was built:**
 
@@ -508,9 +508,9 @@ config, since this is the step that changes what actually runs automatically:**
   pull for this, since the upsert functions themselves were already validated in
   sections 2–3 and the only change here was removing the `to_csv` calls around them.
 
-**Not done:** the two files that keep `find_most_recent_csv`/`find_most_recent_data_csv`
-alive (`utils/utils.py`) — and the old CSV-chain files generally — are a deliberate
-non-goal here per the decisions above, not an oversight.
+**Originally not done, done shortly after:** the old CSV-chain files were deliberately
+kept on disk per the decisions above — see "Deleting the old CSV-chain scripts" below
+for when that changed.
 
 ---
 
@@ -536,6 +536,57 @@ hard-crashing. Used inside `plot_unique_samples()` (covers both
 call sites. Verified against the real DB: reproduces the exact `SOILS` warning
 (now a log line, not a crash) and all three plots complete.
 
+## Deleting the old CSV-chain scripts (done)
+
+Section 6 originally kept the old files on disk, unreferenced, as a rollback path.
+Once the DB-driven pipeline had actually run live end-to-end (including the palette
+fix above), that rollback path was no longer wanted — asked for explicitly, so this
+went further than the plan's original text.
+
+**Deleted:** `process_blob_analysis.py`, `process_tables_analysis.py`, `report.py`,
+`plot_by_season.py`, `create_batches.py`, `append_datetime.py`. `image_inspection.py`
+was **not** deleted — it has no DB-driven replacement (section 5 only fixed its bug in
+place), so deleting it would have removed a capability, not retired a superseded one.
+
+**Two real code dependencies had to be resolved first, not just config changes:**
+- `report_db.py` did `from report import PreprocessingCheck` (subclassed it as
+  `PreprocessingCheckDb`, only overriding `analyze_directory`). Inlined
+  `PreprocessingCheck`'s remaining methods (`_count_images`, `_get_folder_metadata`,
+  `save_to_csv`, `plot_batches_per_week`) directly into `PreprocessingCheckDb`, which
+  is now a standalone class.
+- `create_batches_db.py` did `from create_batches import CreateBatchProcessor,
+  FieldBatchLister` (subclassed `CreateBatchProcessor` as `DbBatchProcessor`, used
+  `FieldBatchLister` directly). Inlined `FieldBatchLister`, the module-level
+  `round_down_to_nearest_3_hours`/`jpg_name_to_arw` helpers, and every
+  `CreateBatchProcessor` method `DbBatchProcessor` used (`config_keys`,
+  `split_datetime`, `preprocess_df`, `adjust_groups`, `filter_batched_data`,
+  `move_from_weeedsimagerepo2fieldbatches`, `process_df`, `process_df_concurrently`) —
+  `DbBatchProcessor` is now standalone too. This is also where the section 4 bug
+  fixes (case-sensitive JPG→ARW, Linux-only `os.sched_getaffinity`) ended up living.
+- `blob2nfs.py` (pre-existing WIP script, outside the refactor's scope but a real
+  consumer) did `from create_batches import FieldBatchLister` — repointed at
+  `create_batches_db`. It also imported `find_most_recent_csv` from `utils/utils.py`
+  without ever calling it (a pre-existing unused import) — dropped.
+
+**`utils/utils.py` cleanup**, now that the old files are actually gone:
+- `find_most_recent_csv` — genuinely dead (its only caller was `create_batches.py`) —
+  deleted.
+- `find_most_recent_data_csv` — **kept**, `image_inspection.py` still uses it.
+- `convert_datetime`/`is_wrong_format` — found to be dead code *before* even reaching
+  this cleanup (`append_datetime.py` imported `convert_datetime` but never called it)
+  — deleted along with a duplicate `import re` line noticed in the same pass.
+
+**Verified:** every remaining file compiles and imports (including `blob2nfs.py`);
+grepped for any dangling `from report import` / `from create_batches import` /
+`find_most_recent_csv` references — none found. Re-ran the full functional smoke
+test against the real DB (read-only — no live Azure): `PreprocessingCheckDb` matched
+**461** folders, identical to the pre-deletion baseline; every `BatchReportDb`,
+`PlotsBySeasonDb`, and `DbBatchProcessor` method ran with no exceptions
+(`DbBatchProcessor` carried 107,075 rows through `adjust_groups()`); 34 output files
+generated (vs. 32 in section 5's original baseline — the 2 extra are the
+SOILS/COTTONFLOWERS per-state plots that now complete instead of crashing partway
+through, from the palette fix above, not a regression from this deletion).
+
 ### Cross-cutting items not yet scheduled to a specific section
 
 These are called out in plan sections 3.7/3.8 and the standalone bug list (plan
@@ -553,13 +604,13 @@ section 4), not yet tackled:
 - **Keys schema unification (3.3):** `keys/authorized_keys.yaml`'s two schemas (shared
   `account_url` + per-container overrides for blobs, vs. per-table `url` for tables) are
   still fragmented — sections 2–3 deliberately routed around this rather than rewriting
-  the live secrets file. Worth doing once `create_batches.py` (the other consumer of
-  the blob-key schema) is rewritten in section 4, so both consumers can move to one
-  schema together.
-- **Remaining standalone bugs (plan section 4)** not yet touched: the
-  `append_datetime.py` `ref_df.shape[0]` crash when `ref_df is None` (see also the
-  `images.exif_datetime` gap under section 6 above — same file, larger problem than
-  just this one crash), and the `utils.utils.read_yaml`/`read_csv_as_df` pattern of
-  catching any `Exception` and re-raising a generic `FileNotFoundError` (hides the real
-  error). Neither blocks sections 4–6 and can be picked up whenever convenient,
-  independent of this build order.
+  the live secrets file. `create_batches_db.py` (the DB-driven consumer of the blob-key
+  schema, now the only one — `create_batches.py` is deleted) reads it the same
+  unrestructured way; still worth unifying whenever convenient.
+- **Remaining standalone bugs (plan section 4):** the `ref_df.shape[0]` crash when
+  `ref_df is None` was specific to `append_datetime.py`'s CSV-merge logic, which no
+  longer exists (file deleted, replaced by `append_datetime_db.py`'s DB-based
+  approach, which has no equivalent code path to crash) — **moot, not carried
+  forward**. Still open: `utils.utils.read_yaml`/`read_csv_as_df`'s pattern of
+  catching any `Exception` and re-raising a generic `FileNotFoundError` (hides the
+  real error). Doesn't block anything, pick up whenever convenient.

@@ -4,6 +4,7 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -14,27 +15,32 @@ from db.connection import get_connection
 from db.locations import all_known_locations, batch_folder_regex, roll_up_to_parent
 from db.reporting import load_report_dataframe
 from plotting import ensure_palette_covers, plot_unique_samples
-from report import PreprocessingCheck
 
 log = logging.getLogger(__name__)
 
 """
     report.py's all-years reporting/plotting, sourced from images/samples/locations
-    in the DB instead of find_most_recent_data_csv. Not part of the automatic
-    pipeline (cfg.pipeline) yet - run manually and compare its aggregate counts
-    against report.py's:
-        python main.py general.task=report_db +pipeline=[report_db]
+    in the DB instead of find_most_recent_data_csv. This is the live path
+    (cfg.pipeline): python main.py general.task=report_db +pipeline=[report_db]
 """
 
 
-class PreprocessingCheckDb(PreprocessingCheck):
-    """Same NFS directory scan as PreprocessingCheck, but the batch-folder pattern
-    is generated from the DB's real location codes (db/locations.py) instead of a
-    hardcoded '2 letters, optionally + 2 digits' regex."""
+class PreprocessingCheckDb:
+    """Same NFS directory scan report.py's PreprocessingCheck did, but the
+    batch-folder pattern is generated from the DB's real location codes
+    (db/locations.py) instead of a hardcoded '2 letters, optionally + 2 digits'
+    regex."""
 
     def __init__(self, cfg: DictConfig, conn) -> None:
-        super().__init__(cfg)
         self.conn = conn
+        self.storage_path = Path(cfg.paths.longterm_storage)
+        if not self.storage_path.exists():
+            log.error(f"Path {self.storage_path} does not exist.")
+            raise FileNotFoundError(f"Path {self.storage_path} does not exist.")
+        log.info(f"Initialized PreprocessingCheckDb for path: {self.storage_path}")
+
+        self.save_table_path = Path(cfg.paths.preprocessing_analysis)
+        self.save_plot_dir = Path(cfg.paths.plots_all_years)
 
     def analyze_directory(self) -> pd.DataFrame:
         results = []
@@ -58,6 +64,56 @@ class PreprocessingCheckDb(PreprocessingCheck):
         df = pd.DataFrame(results)
         log.info(f"Directory analysis completed. Processed {len(results)} folders.")
         return df
+
+    def _count_images(self, folder: Path) -> Tuple[int, int]:
+        jpg_count = sum(1 for f in folder.rglob("*.jpg"))
+        raw_count = sum(1 for f in folder.rglob("*.ARW"))
+        log.debug(f"Counted {jpg_count} JPG files and {raw_count} RAW files in folder: {folder}")
+        return jpg_count, raw_count
+
+    def _get_folder_metadata(self, folder: Path) -> Tuple[str, str]:
+        stat = folder.stat()
+        creation_date = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d")
+        last_modified_date = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d")
+        log.debug(f"Retrieved metadata for folder {folder}: CreationDate={creation_date}, LastModifiedDate={last_modified_date}")
+        return creation_date, last_modified_date
+
+    def save_to_csv(self, df: pd.DataFrame) -> None:
+        df.to_csv(self.save_table_path, index=False)
+        log.info(f"Results saved to CSV: {self.save_table_path}")
+
+    def plot_batches_per_week(self, df: pd.DataFrame) -> None:
+        """Plots valid (JPGCount == RAWCount) batches created per week, listing
+        any unequal-count folders in a text box."""
+        df["IsEqual"] = df["JPGCount"] == df["RAWCount"]
+        valid_folders = df.loc[df["IsEqual"]].copy()
+        invalid_folders = df.loc[~df["IsEqual"]]
+
+        if valid_folders.empty:
+            log.info("No valid folders to plot (no folders where JPGCount equals RAWCount).")
+            return
+
+        valid_folders.loc[:, "LastModifiedDate"] = pd.to_datetime(valid_folders["LastModifiedDate"])
+        valid_folders.set_index("LastModifiedDate", inplace=True)
+        valid_folders.loc[:, "WeekStart"] = valid_folders.index.to_period("W").start_time
+
+        batches_per_week = valid_folders.groupby("WeekStart").size().reset_index(name="BatchCount")
+        sns.catplot(x="WeekStart", y="BatchCount", data=batches_per_week, kind="bar", height=6, aspect=2)
+        plt.title("Number of Preprocessed Batches Created Per Week")
+        plt.xlabel("Week Start Date")
+        plt.ylabel("Number of Preprocessed Batches")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+
+        if not invalid_folders.empty:
+            invalid_batch_list = "\n".join(invalid_folders["FolderName"].tolist())
+            plt.gcf().text(0.2, 0.95, f"Batches with unequal JPG and RAW counts:\n{invalid_batch_list}",
+                            ha="center", va="top", fontsize=10, bbox=dict(facecolor="white", alpha=0.5))
+
+        save_path = Path(self.save_plot_dir, "preprocessed_batches_per_week.png")
+        plt.savefig(save_path)
+        plt.close()
+        log.info(f"Plot saved to {save_path}")
 
 
 class BatchReportDb:
