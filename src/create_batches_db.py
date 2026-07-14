@@ -9,6 +9,7 @@ from omegaconf import DictConfig
 from create_batches import CreateBatchProcessor, FieldBatchLister
 from db.connection import get_connection
 from db.locations import all_known_locations, batch_folder_regex
+from db.upsert import update_image_batch_id, upsert_batches
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)
@@ -69,6 +70,28 @@ class DbBatchProcessor(CreateBatchProcessor):
                 f"location code: {unknown[:10]}{'...' if len(unknown) > 10 else ''}"
             )
 
+    def persist_batches(self) -> None:
+        """Upserts a `batches` row per assigned batch and sets images.batch_id,
+        reusing upsert_batches's label-parsing logic (db/upsert.py, shared with
+        migrate_to_db.py) instead of duplicating it. Closes the gap noted in
+        refactor-progress.md section 6: batch assignments used to be computed in
+        memory only, purely to drive the azcopy move, and never written back to
+        the DB - `batches` only ever had the rows migrate_to_db.py backfilled
+        from history. Runs over the full computed assignment (self.df, before
+        filter_batched_data narrows it to "not yet moved"), so images.batch_id
+        reflects batch membership regardless of whether the azcopy copy has
+        happened yet."""
+        self.df["BatchID"] = self.df["UsState"] + "_" + self.df["CameraInfo_Date"].apply(lambda d: d.strftime("%Y-%m-%d"))
+        label_to_id = upsert_batches(self.conn, self.df)
+        batch_id_by_blob_name = {
+            row.Name: label_to_id[row.BatchID]
+            for row in self.df.itertuples(index=False)
+            if row.BatchID in label_to_id
+        }
+        update_image_batch_id(self.conn, batch_id_by_blob_name)
+        self.conn.commit()
+        log.info(f"Persisted {len(label_to_id)} batches, set batch_id on {len(batch_id_by_blob_name)} images")
+
 
 def main(cfg: DictConfig) -> None:
     """Mirrors create_batches.py's main(), sourcing the batch DataFrame from the
@@ -85,6 +108,7 @@ def main(cfg: DictConfig) -> None:
         dataproc.preprocess_df()
         dataproc.adjust_groups()
         dataproc.warn_on_unknown_batch_labels()
+        dataproc.persist_batches()
         dataproc.filter_batched_data(present_batches_df)
 
         run_concurrent = True

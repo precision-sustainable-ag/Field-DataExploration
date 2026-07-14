@@ -1,8 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 
-import pandas as pd
 from omegaconf import DictConfig
 from tqdm import tqdm
 
@@ -16,26 +14,23 @@ log = logging.getLogger(__name__)
 
 class TableExporter:
     """
-    Exports Azure Table Storage data to CSV files, driven by `cfg.sources`
-    (entries with `type: azure_table`), and upserts rows into the SQLite DB
-    according to each source's `entity` field:
+    Pulls Azure Table Storage data, driven by `cfg.sources` (entries with
+    `type: azure_table`), and upserts rows into the SQLite DB according to each
+    source's `entity` field:
         - image_ref: one row per image, links a blob to a MasterRefID
         - sample_attributes: staged raw rows, coalesced into `samples` later
-        - none: CSV-only (e.g. wirlogs), no DB write
+        - none: no DB write (e.g. wirlogs)
 
     Attributes:
         __auth_config_data (dict): Azure Table Storage credentials per table.
-        tables_dir (str): The directory path where CSV files will be stored.
     """
 
     def __init__(self, cfg: DictConfig) -> None:
         self.__auth_config_data = read_yaml(cfg.pipeline_keys)
-        self.tables_dir = cfg.paths.tablesdir
         self.db_path = cfg.paths.db_path
         self.sources = [s for s in cfg.sources if s.type == "azure_table"]
-        Path(self.tables_dir).mkdir(exist_ok=True, parents=True)
 
-    def get_table_csv(self):
+    def pull_and_upsert(self):
         conn = get_connection(self.db_path)
         try:
             for source in tqdm(self.sources):
@@ -45,11 +40,7 @@ class TableExporter:
                     log.warning(f"{source.name} data is empty, Not saving!")
                     continue
 
-                df_table = pd.DataFrame(entities)
-                csv_path = Path(self.tables_dir, f"{source.name}_table_metrics.csv")
-                df_table.to_csv(csv_path, index=False)
-                log.info(f"Exported {source.name} data to {csv_path}")
-
+                log.info(f"Fetched {len(entities)} {source.name} rows")
                 self._upsert_entities(conn, source, entities)
             conn.commit()
         finally:
@@ -78,5 +69,5 @@ class TableExporter:
 def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
     exporter = TableExporter(cfg)
-    exporter.get_table_csv()
+    exporter.pull_and_upsert()
     log.info(f"{cfg.general.task} completed.")

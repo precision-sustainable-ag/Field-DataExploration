@@ -3,6 +3,8 @@ import logging
 import re
 from pathlib import Path
 
+import pandas as pd
+
 log = logging.getLogger(__name__)
 
 
@@ -116,3 +118,65 @@ def upsert_sample_attributes(conn, source_name: str, entity: dict, ingested_at: 
         ),
     )
     return True
+
+
+def update_image_exif_datetime(conn, exif_datetime_by_blob_name: dict) -> int:
+    """Sets images.exif_datetime for the given {blob_name: canonical datetime string}
+    map. Only column owned here - doesn't touch any other image field."""
+    conn.executemany(
+        "UPDATE images SET exif_datetime = ? WHERE blob_name = ?",
+        [(value, blob_name) for blob_name, value in exif_datetime_by_blob_name.items()],
+    )
+    return len(exif_datetime_by_blob_name)
+
+
+def upsert_batches(conn, df: pd.DataFrame) -> dict:
+    """Upserts one `batches` row per distinct df['BatchID'] label
+    ('{location_code}_{date}'). Returns a mapping of batch_label -> batch id.
+    Shared by migrate_to_db.py (historical BatchID column) and
+    create_batches_db.py (freshly-computed batch assignments) so both upsert
+    through one implementation instead of two."""
+    known_codes = {row[0] for row in conn.execute("SELECT code FROM locations").fetchall()}
+    labels = df["BatchID"].dropna().unique().tolist()
+    rows = []
+    unknown_location_labels = []
+    for label in labels:
+        location_code, _, batch_date = label.rpartition("_")
+        if location_code not in known_codes:
+            unknown_location_labels.append(label)
+            location_code = None
+        rows.append((location_code, label, batch_date or None))
+
+    if unknown_location_labels:
+        log.warning(
+            f"{len(unknown_location_labels)} BatchID labels have a location prefix "
+            f"that isn't a known location code, storing with location_code=NULL: "
+            f"{unknown_location_labels[:10]}{'...' if len(unknown_location_labels) > 10 else ''}"
+        )
+
+    conn.executemany(
+        """
+        INSERT INTO batches (location_code, batch_label, batch_date)
+        VALUES (?, ?, ?)
+        ON CONFLICT(location_code, batch_date, batch_label) DO NOTHING
+        """,
+        rows,
+    )
+    log.info(f"Upserted {len(rows)} batches")
+
+    label_to_id = {
+        label: batch_id
+        for batch_id, label in conn.execute(
+            "SELECT id, batch_label FROM batches"
+        ).fetchall()
+    }
+    return label_to_id
+
+
+def update_image_batch_id(conn, batch_id_by_blob_name: dict) -> int:
+    """Sets images.batch_id for the given {blob_name: batch id} map."""
+    conn.executemany(
+        "UPDATE images SET batch_id = ? WHERE blob_name = ?",
+        [(batch_id, blob_name) for blob_name, batch_id in batch_id_by_blob_name.items()],
+    )
+    return len(batch_id_by_blob_name)

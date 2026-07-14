@@ -103,8 +103,9 @@ class PlotsBySeason:
         current_season_cover_crop = f"{self.current_year - 1}/{self.current_year} COVERCROPS"
         current_season_weeds = f"{self.current_year} WEEDS"
         current_season_cashcrops = f"{self.current_year} CASHCROPS"
+        current_season_soils = f"{self.current_year} SOILS"
 
-        current_seasons = [current_season_cover_crop, current_season_weeds, current_season_cashcrops]
+        current_seasons = [current_season_cover_crop, current_season_weeds, current_season_cashcrops, current_season_soils]
         data_current_season = self.permanent_df[self.permanent_df["Season"].isin(current_seasons)]
 
         log.info("Season column added successfully.")
@@ -124,12 +125,14 @@ class PlotsBySeason:
         cover_crop_label = f"{last_year}/{self.current_year} COVERCROPS"
         weeds_label = f"{self.current_year} WEEDS"
         cash_crops_label = f"{self.current_year} CASHCROPS"
+        soils_label = f"{self.current_year} SOILS"
         
         # Define plant type palette with new labels
         planttype_palette = {
             cover_crop_label: "#4C72B0",
             weeds_label: "#55A868",
             cash_crops_label: "#C44E52",
+            soils_label: "#A95609",
         }
         
         unique_ids_count = (

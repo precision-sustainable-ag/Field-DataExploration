@@ -178,6 +178,7 @@ class BatchReport:
             "WEEDS": "#55A868",
             "COVERCROPS": "#4C72B0",
             "CASHCROPS": "#C44E52",
+            "SOILS": "#A95609",
         }
 
     def config_report_dir(self) -> None:

@@ -1,5 +1,4 @@
 import os
-import cv2
 import logging
 import shutil
 
@@ -143,7 +142,7 @@ class InsepctRecentUploads:
                 plt.close(fig)
 
                 os.remove(image_path) # remove the temp image after plotting
-            except Warning as e:
+            except Exception as e:
                 log.error(f"Error plotting images for inspection {image_path}: {e}")
 
 def main(cfg: DictConfig) -> None:
