@@ -1,12 +1,14 @@
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-from azure.core.credentials import AzureSasCredential
-from azure.data.tables import TableServiceClient
 from omegaconf import DictConfig
 from tqdm import tqdm
 
+from db.connection import get_connection
+from db.upsert import upsert_image_from_imageref, upsert_sample_attributes
+from ingestion_sources import AzureTableSource, resolve_table_credentials
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)
@@ -14,60 +16,63 @@ log = logging.getLogger(__name__)
 
 class TableExporter:
     """
-    A class for exporting Azure Table Storage data to CSV files.
-
-    This class handles the connection to Azure Table Storage, retrieves data from specified tables,
-    and exports the data into CSV files within a specified directory.
+    Exports Azure Table Storage data to CSV files, driven by `cfg.sources`
+    (entries with `type: azure_table`), and upserts rows into the SQLite DB
+    according to each source's `entity` field:
+        - image_ref: one row per image, links a blob to a MasterRefID
+        - sample_attributes: staged raw rows, coalesced into `samples` later
+        - none: CSV-only (e.g. wirlogs), no DB write
 
     Attributes:
-        __auth_config_data (dict): Configuration data containing Azure Table Storage credentials,
-                                   including account URLs and SAS tokens for each table.
+        __auth_config_data (dict): Azure Table Storage credentials per table.
         tables_dir (str): The directory path where CSV files will be stored.
-
-    Methods:
-        __init__(cfg: DictConfig): Initializes the TableExporter instance with configuration from a DictConfig object.
-        get_table_data(account_url, sas_token, table_name): Retrieves data from a specified table in Azure Table Storage.
-        get_table_csv(): Iterates through configured tables, retrieves their data, and exports the data to CSV files.
     """
 
     def __init__(self, cfg: DictConfig) -> None:
         self.__auth_config_data = read_yaml(cfg.pipeline_keys)
         self.tables_dir = cfg.paths.tablesdir
+        self.db_path = cfg.paths.db_path
+        self.sources = [s for s in cfg.sources if s.type == "azure_table"]
         Path(self.tables_dir).mkdir(exist_ok=True, parents=True)
 
-    def get_table_data(self, account_url, sas_token, table_name):
-
-        try:
-            table_service_client = TableServiceClient(
-                endpoint=account_url, credential=AzureSasCredential(sas_token)
-            )
-            table_client = table_service_client.get_table_client(table_name=table_name)
-            # Fetch all entities from the specified table
-            entities = []
-            for i in table_client.list_entities():
-                timestamp = str(i._metadata["timestamp"])
-                i["Timestamp"] = timestamp
-                entities.append(i)
-            return entities
-
-        except Exception as error:
-            log.exception(f"Error! Check {table_name} authorization parameters")
-            return []
-
     def get_table_csv(self):
-        for table_name in tqdm(self.__auth_config_data["tables"]):
-            sas_token = self.__auth_config_data["tables"][table_name]["sas_token"]
-            account_url = self.__auth_config_data["tables"][table_name]["url"]
-            # Get data from Azure Table Storage
-            table_data = self.get_table_data(account_url, sas_token, table_name)
-            if table_data:
-                df_images_details = pd.DataFrame(table_data)
-                # Export to CSV
-                csv_path = Path(self.tables_dir, f"{table_name}_table_metrics.csv")
-                df_images_details.to_csv(csv_path, index=False)
-                log.info(f"Exported {table_name} data to {csv_path}")
-            else:
-                log.warn(f"{table_name} data is empty, Not saving!")
+        conn = get_connection(self.db_path)
+        try:
+            for source in tqdm(self.sources):
+                url, sas_token = resolve_table_credentials(self.__auth_config_data, source.key_ref)
+                entities = AzureTableSource(source.name, url, sas_token).fetch()
+                if not entities:
+                    log.warning(f"{source.name} data is empty, Not saving!")
+                    continue
+
+                df_table = pd.DataFrame(entities)
+                csv_path = Path(self.tables_dir, f"{source.name}_table_metrics.csv")
+                df_table.to_csv(csv_path, index=False)
+                log.info(f"Exported {source.name} data to {csv_path}")
+
+                self._upsert_entities(conn, source, entities)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _upsert_entities(self, conn, source, entities) -> None:
+        if source.entity == "image_ref":
+            upserted = sum(upsert_image_from_imageref(conn, entity) for entity in entities)
+            skipped = len(entities) - upserted
+            log.info(f"{source.name}: upserted {upserted} images, skipped {skipped} rows with no MasterRefID")
+        elif source.entity == "sample_attributes":
+            ingested_at = datetime.now(timezone.utc).isoformat()
+            master_ref_key = source.get("master_ref_key", "MasterRefID")
+            upserted = sum(
+                upsert_sample_attributes(conn, source.name, entity, ingested_at, master_ref_key)
+                for entity in entities
+            )
+            skipped = len(entities) - upserted
+            log.info(f"{source.name}: upserted {upserted} sample attribute rows, skipped {skipped} rows with no {master_ref_key}")
+        elif source.entity == "none":
+            pass
+        else:
+            log.warning(f"{source.name}: unrecognized entity type {source.entity!r}, skipping DB upsert")
 
 
 def main(cfg: DictConfig) -> None:

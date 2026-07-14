@@ -33,3 +33,7 @@ tables:
   wirlogs:
       url: ""
       sas_token: ""
+
+  wirsoilsmeta:
+      url: ""
+      sas_token: ""

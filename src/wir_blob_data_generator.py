@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
 import logging
 from pathlib import Path
 
 import pandas as pd
-from azure.storage.blob import BlobServiceClient
 from omegaconf import DictConfig
-from tqdm import tqdm
 
+from db.connection import get_connection
+from db.upsert import upsert_image_from_blob
+from ingestion_sources import AzureBlobSource, resolve_blob_credentials
 from utils.utils import read_yaml
 
 log = logging.getLogger(__name__)
@@ -14,77 +14,51 @@ log = logging.getLogger(__name__)
 
 class BlobMetricExporter:
     """
-    A class designed to export metrics of blob files from Azure Blob Storage to CSV files.
-
-    This class connects to Azure Blob Storage, retrieves detailed metrics for files within specified containers,
-    and exports these metrics into CSV files for further analysis or reporting.
+    Exports Azure Blob Storage metrics to CSV files, driven by `cfg.sources`
+    (entries with `type: azure_blob`), and upserts each blob into the
+    `images` table in the SQLite DB.
 
     Attributes:
-        __auth_config_data (dict): Configuration data containing Azure Blob Storage credentials,
-                                including account URLs and SAS tokens for each container.
+        __auth_config_data (dict): Azure Blob Storage credentials per container.
         blobs_dir (Path): The directory path where CSV files will be stored.
-
-    Methods:
-        __init__(cfg): Initializes the BlobMetricExporter instance with configuration from a DictConfig object.
-        get_blob_metrics(account_url, sas_token, container_name): Retrieves file metrics from a specified container in Azure Blob Storage.
-        get_blob_csv(): Iterates through configured containers, retrieves their file metrics, and exports the metrics to CSV files.
     """
 
     def __init__(self, cfg) -> None:
         self.__auth_config_data = read_yaml(cfg.pipeline_keys)
         self.blobs_dir = cfg.paths.blobsdir
+        self.db_path = cfg.paths.db_path
+        self.sources = [s for s in cfg.sources if s.type == "azure_blob"]
         Path(self.blobs_dir).mkdir(exist_ok=True, parents=True)
 
-    def get_blob_metrics(self, account_url, sas_token, container_name):
-        """
-        Uses container client to return detailed metrics for jpg and raw files in the container.
-
-        Returns:
-            images_details (list): List of dictionaries with details for each image.
-        """
+    def get_blob_csv(self):
+        conn = get_connection(self.db_path)
         try:
+            for source in self.sources:
+                account_url, sas_token, container_name = resolve_blob_credentials(
+                    self.__auth_config_data, source.key_ref
+                )
+                blob_details = AzureBlobSource(source.name, account_url, sas_token, container_name).fetch()
+                if not blob_details:
+                    log.warning(f"{source.name} data is empty, Not saving!")
+                    continue
 
-            images_details = []
+                df_blob_details = pd.DataFrame(blob_details)
+                csv_path = Path(self.blobs_dir, f"{source.name}_blob_metrics.csv")
+                df_blob_details.to_csv(csv_path, index=False)
+                log.info(f"Exported {source.name} data to {csv_path}")
 
-            blob_service_client = BlobServiceClient(
-                account_url=account_url, credential=sas_token
-            )
-            container_client = blob_service_client.get_container_client(container_name)
-
-            for blob in tqdm(container_client.list_blobs()):
-
-                image_detail = {
-                    "name": blob.name,  # blob name
-                    "memory_mb": float(blob.size / pow(1024, 2)),  # convert kb to mb
-                    "container": blob.container,  # get container name
-                    "creation_time_utc": blob.creation_time,  # get creation time
-                }
-                images_details.append(image_detail)
-
-            return images_details
-
-        except Exception as error:
-
-            log.exception(f"Error! Check {container_name} authorization parameters")
-
-    def get_blob_csv(self, container_name="weedsimagerepo"):
-        sas_token = self.__auth_config_data["blobs"][container_name]["sas_token"]
-        account_url = self.__auth_config_data["blobs"]["account_url"]
-
-        # Get data from Blob servers
-        images_details = self.get_blob_metrics(account_url, sas_token, container_name)
-        if images_details:
-            df_images_details = pd.DataFrame(images_details)
-            # Export to CSV
-            csv_path = Path(self.blobs_dir, f"{container_name}_blob_metrics.csv")
-            df_images_details.to_csv(csv_path, index=False)
-            log.info(f"Exported {container_name} data to {csv_path}")
-        else:
-            log.warn(f"{container_name} data is empty, Not saving!")
+                if source.entity == "image":
+                    for blob in blob_details:
+                        upsert_image_from_blob(conn, blob)
+                elif source.entity != "none":
+                    log.warning(f"{source.name}: unrecognized entity type {source.entity!r}, skipping DB upsert")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
     exporter = BlobMetricExporter(cfg)
-    exporter.get_blob_csv(container_name="weedsimagerepo")
+    exporter.get_blob_csv()
     log.info(f"{cfg.general.task} completed.")
