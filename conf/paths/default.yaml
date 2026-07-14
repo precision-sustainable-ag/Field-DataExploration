@@ -6,6 +6,7 @@ blobsdir: ${paths.datadir}/blobs/${job.job_now_date}
 processed_datadir: ${paths.datadir}/processed_tables/${job.job_now_date}
 persistent_datadir: ${paths.datadir}/persistent_tables
 permanent_merged_table: ${paths.persistent_datadir}/merged_blobs_tables_metadata_permanent.csv
+db_path: ${paths.persistent_datadir}/field_exploration.db
 longterm_storage: /mnt/research-projects/r/raatwell/longterm_images3/field-batches
 
 # temp
