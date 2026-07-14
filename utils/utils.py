@@ -1,10 +1,8 @@
-import os
 import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
 import requests
-import re
 
 import exifread
 import pandas as pd
@@ -49,44 +47,6 @@ def find_most_recent_data_csv(root_dir, filename="merged_blobs_tables_metadata.c
 
     if target_folder:
         return target_folder
-    return None
-
-
-def find_most_recent_csv(main_directory_path: str, csv_filename: str) -> str | None:
-    """
-    Finds the most recent CSV file based on the subfolder names which are dates.
-    """
-    # List all items in the main directory
-    all_items = os.listdir(main_directory_path)
-
-    # Filter out items that are not directories or don't match the date pattern
-    dated_subfolders = [
-        item
-        for item in all_items
-        if os.path.isdir(os.path.join(main_directory_path, item))
-    ]
-    # Ensure that the folder names are valid dates
-    dated_subfolders = [
-        folder
-        for folder in dated_subfolders
-        if len(folder) == 10 and folder.count("-") == 2
-    ]
-
-    # Sort the list of dated subfolders to find the most recent one
-    dated_subfolders.sort(
-        key=lambda date: datetime.strptime(date, "%Y-%m-%d"), reverse=True
-    )
-
-    # The first element is now the most recent subfolder
-    most_recent_subfolder = dated_subfolders[0] if dated_subfolders else None
-
-    if most_recent_subfolder:
-        # Construct the path to the most recent CSV file
-        most_recent_csv_path = os.path.join(
-            main_directory_path, most_recent_subfolder, csv_filename
-        )
-        return most_recent_csv_path
-
     return None
 
 
@@ -171,16 +131,3 @@ def download_from_url(image_url: str, savedir: str = ".") -> None:
             file.write(response.content)
     else:
         print(f"Failed to download image from {image_url}")
-
-def convert_datetime(dt):
-    if pd.isna(dt):
-        return dt  # Handle NaN values by returning them as-is
-    if is_wrong_format(dt):
-        # Convert from old format to new format
-        return datetime.strptime(dt, '%Y:%m:%d %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
-    return dt  # If it's not in the wrong format, return as-is
-    
-def is_wrong_format(dt_str):
-    # Check if the string matches the pattern YYYY:MM:DD
-    pattern = r'^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$'
-    return bool(re.match(pattern, str(dt_str)))
