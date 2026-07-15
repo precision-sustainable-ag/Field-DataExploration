@@ -76,33 +76,8 @@ def get_exif_data(image_path: str) -> dict:
             exif = {}
     return exif
 
-
-
-def azcopy_list(url, read_keys, tempoutput):
-    azlist_src = url + read_keys
-    command = f'azcopy list "{azlist_src}" > {tempoutput}'
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    # Check if the command was executed successfully
-    if result.returncode != 0:
-        print("Copy unsuccessful")
-        print(result.stdout)
-
-
 def download_azcopy(azuresrc, localdest):
     command = f'azcopy cp "{azuresrc}" "{localdest}"'
-
-    # result = subprocess.run(command, capture_output=True, text=True)
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    # Check if the command was executed successfully
-    if result.returncode == 0:
-        print("Copy successful")
-        print(result.stdout)
-    else:
-        print("Error in copy operation")
-        print(result.stderr)
-
-def download_azcopy_multiple(azuresrc, localdest, image_list):
-    command = f'azcopy cp "{azuresrc}" "{localdest}" --include-path="{image_list}"'
 
     # result = subprocess.run(command, capture_output=True, text=True)
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
