@@ -1,6 +1,5 @@
 # Hydra defaults and settings. Ignore these (don't change)
 defaults:
-  # - override hydra/job_logging: custom # custom logging 
   - paths: default
   - _self_
 
@@ -10,10 +9,10 @@ hydra:
   output_subdir: ${hydra.run.dir}/hydra
 
 pipeline:
-    # - wir_table_generator
-    # - wir_blob_data_generator
-    # - merge_samples
-    # - append_datetime_db
+    - wir_table_generator
+    - wir_blob_data_generator
+    - merge_samples
+    - append_datetime_db
     - report_db
     - plot_by_season_db
     # - image_inspection
@@ -54,7 +53,7 @@ state_list:
   - TX02
   - VA
   - NY
-  - KS
+  - OH
 
 sources:
   - name: weedsimagerepo
