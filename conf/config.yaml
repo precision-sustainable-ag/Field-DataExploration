@@ -1,6 +1,5 @@
 # Hydra defaults and settings. Ignore these (don't change)
 defaults:
-  # - override hydra/job_logging: custom # custom logging 
   - paths: default
   - _self_
 
@@ -12,12 +11,12 @@ hydra:
 pipeline:
     - wir_table_generator
     - wir_blob_data_generator
-    - process_blob_analysis
-    - process_tables_analysis
-    - append_datetime
-    - report
-    - plot_by_season
-    - image_inspection
+    - merge_samples
+    - append_datetime_db
+    - report_db
+    - plot_by_season_db
+    # - image_inspection
+    # - create_batches_db
 
 general:
   task: # Leave empty as placeholder
@@ -54,4 +53,66 @@ state_list:
   - TX02
   - VA
   - NY
-  - KS
+  - OH
+
+sources:
+  - name: weedsimagerepo
+    type: azure_blob
+    key_ref: weedsimagerepo
+    entity: image
+  - name: wirimagerefs
+    type: azure_table
+    key_ref: wirimagerefs
+    entity: image_ref
+  - name: wirmastermeta
+    type: azure_table
+    key_ref: wirmastermeta
+    entity: sample_attributes
+    master_ref_key: RowKey
+  - name: wircovercropsmeta
+    type: azure_table
+    key_ref: wircovercropsmeta
+    entity: sample_attributes
+  - name: wircropsmeta
+    type: azure_table
+    key_ref: wircropsmeta
+    entity: sample_attributes
+  - name: wirweedsmeta
+    type: azure_table
+    key_ref: wirweedsmeta
+    entity: sample_attributes
+  - name: wirsoilsmeta
+    type: azure_table
+    key_ref: wirsoilsmeta
+    entity: sample_attributes
+  - name: wirlogs
+    type: azure_table
+    key_ref: wirlogs
+    entity: none
+
+coalesce_fields:
+  UsState: [{source: wirmastermeta, field: UsState}]
+  PlantType: [{source: wirmastermeta, field: PlantType}]
+  CloudCover: [{source: wirmastermeta, field: CloudCover}]
+  GroundResidue: [{source: wirmastermeta, field: GroundResidue}]
+  GroundCover: [{source: wirmastermeta, field: GroundCover}]
+  Username: [{source: wirmastermeta, field: Username}]
+  CoverCropFamily: [{source: wircovercropsmeta, field: CoverCropFamily}]
+  GrowthStage: [{source: wircropsmeta, field: GrowthStage}]
+  CottonVariety: [{source: wircropsmeta, field: CottonVariety}]
+  CropOrFallow: [{source: wirweedsmeta, field: CropOrFallow}]
+  CropTypeSecondary: [{source: wirweedsmeta, field: CropType}]
+  Species:
+    - {source: wirweedsmeta, field: WeedType}
+    - {source: wircovercropsmeta, field: CoverCropSpecies}
+    - {source: wircropsmeta, field: CropName}
+  Height:
+    - {source: wircropsmeta, field: Height}
+    - {source: wirweedsmeta, field: Height}
+  SizeClass:
+    - {source: wircropsmeta, field: SizeClass}
+    - {source: wirweedsmeta, field: SizeClass}
+  FlowerFruitOrSeeds:
+    - {source: wircovercropsmeta, field: FlowerFruitOrSeeds}
+    - {source: wirweedsmeta, field: FlowerFruitOrSeeds}
+
