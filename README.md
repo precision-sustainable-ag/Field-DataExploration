@@ -17,64 +17,50 @@ This repo is the central hub for the initial phase of data exploration and asses
 
 ## Installation and Setup
 
-### Installing Conda
-To manage the project's dependencies efficiently, we use Conda, a powerful package manager and environment manager. Follow these steps to install Conda if you haven't already:
-
-1. Download the appropriate version of Miniconda for your operating system from the official [Miniconda website](https://docs.anaconda.com/free/miniconda/).
-2. Follow the installation instructions provided on the website for your OS. This typically involves running the installer from the command line and following the on-screen prompts.
-3. Once installed, open a new terminal window and type `conda list` to ensure Conda was installed correctly. You should see a list of installed packages.
-
-
-### Setting Up Your Environment Using an Environment File
-After installing Conda, you can set up an environment for this project using an environment file, which specifies all necessary dependencies. Here's how:
+This project uses [uv](https://docs.astral.sh/uv/) to manage the Python environment and dependencies.
 
 1. Clone this repository to your local machine.
 2. Navigate to the repository directory in your terminal.
-3. Locate the `environment.yaml` file in the repository. This file contains the list of packages needed for the project.
-4. Create a new Conda environment by running the following command:
+3. Run the setup script, which installs `uv` if needed, provisions Python, and syncs dependencies from `pyproject.toml`/`uv.lock`:
    ```bash
-   conda env create -f environment.yaml
+   ./setup.sh
    ```
-   This command reads the `environment.yaml` file and creates an environment with the name and dependencies specified within it.
-
-5. Once the environment is created, activate it with:
+4. Activate the environment:
    ```bash
-   conda activate <env_name>
+   source .venv/bin/activate
    ```
-   Replace `<env_name>` with the name of the environment specified in the `environment.yaml` file.
+   Or run commands without activating it, e.g. `uv run python main.py`.
 
+### Running the Pipeline
+The pipeline is DB-driven (SQLite) and config-driven via [Hydra](conf/config.yaml).
 
-### Running the Script
-With the environment set up and activated, you can run the scripts provided in the repository to begin data exploration and analysis:
-
-1. Ensure your Conda environment is activated:
-   ```
-   conda activate field
-   ```
-2. To run a script, use the following command syntax:
+1. Set which tasks to run under `pipeline:` in [conf/config.yaml](conf/config.yaml#L11).
+2. Run the pipeline:
    ```bash
-   sh run_volume_assessment.sh
-   ```
-3. [NOTE] Setup the pipeline in the main [config](conf/config.yaml#L11). To run a script, use the following command syntax:
-   ```bash
-   python FIELD_REPORT.py
+   python main.py
    ```
 
 ## Major Scripts
 
-### `append_datetime`
-This script main purpose is to quickley get image DateTime information that can later be used to form batches. We quickley read jpg exif data to get capture datetime information, then remove the download jpg. We get the jpg from the azure blob container. This script appends date-time metadata extracted from the downloaded image EXIF data to an existing persistent CSV table. this is a crucial step that allows us to form "batches" for preprocessing. The script must be run before the "create_batches" task. If no new data is found, nothing happens. 
+Pipeline tasks live under `src/` and are wired up by name in `conf/config.yaml`'s `pipeline` list.
 
-Features of Note:
-   - The script finds the most recent "merged..." CSV file in "data/processed_data" and merges it with persistent data for continuous updates.
-   - It processes each JPG image to extract and append EXIF DateTime metadata to the relevant records in the CSV.
-   - Concurrency Handling: We use concurrent.futures and ThreadPoolExecutor for handling multiple downloads and reading of exif data at the same time.
+### `wir_table_generator` / `wir_blob_data_generator`
+Pull image reference, sample attribute, and blob metadata from the configured Azure sources (see `conf/config.yaml`'s `sources`) and upsert them into the SQLite datastore.
 
-### `create_bathces`
-This scripts create batches by using the updated DateTime information from `append_datetime` , organizes raw images into "batches", and copies those image batches to the field-batches blob container. The script adjusts and groups images based on metadata into "batches" and filters out already processed or duplicate batches. Batch groupings are based on State, capture date, and 3 hour capture time intervals. It offers the flexibility to process data either concurrently or sequentially.
+### `merge_samples`
+Coalesces per-source sample attributes and locations into merged records in the datastore.
+
+### `append_datetime_db`
+Downloads each image's JPG from Azure Blob just long enough to read its EXIF capture DateTime, then discards the file and records the timestamp in the DB. This must run before `create_batches_db`; images already have a datetime are skipped. Uses `ThreadPoolExecutor` for concurrent downloads/reads.
+
+### `create_batches_db`
+Groups images into "batches" using the DateTime information from `append_datetime_db`, based on State, capture date, and 3-hour capture-time intervals, then copies each batch to the `field-batches` blob container. Skips batches already processed. Can run concurrently or sequentially.
+
+### `report_db` / `plot_by_season_db`
+Generate status reports and plots (by location, by season) from the current DB state. Output is written under `report/<date>/`.
+
+### `migrate_to_db`
+One-off migration of legacy CSV-based batch/location data into the SQLite datastore.
+
 ### `image_inspection`
-
-This script is designed to facilitate the quality check process by performing the following functions:
-
-Random Image Selection: Automatically selects up to 15 images that have been uploaded in the past 15 days from a merged data table.
-Image Plotting with Metadata: For each selected image, the script generates a plot that includes the image itself along with key metadata fields. Plots are located in the `report/<date>/inspection` folder.
+Facilitates manual quality checks: randomly selects recently-uploaded images and plots each alongside its key metadata fields. Plots are located in the `report/<date>/inspection` folder.
