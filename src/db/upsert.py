@@ -180,3 +180,50 @@ def update_image_batch_id(conn, batch_id_by_blob_name: dict) -> int:
         [(batch_id, blob_name) for blob_name, batch_id in batch_id_by_blob_name.items()],
     )
     return len(batch_id_by_blob_name)
+
+
+def upsert_file_locations(conn, rows: list) -> int:
+    """Upserts scanned file rows (from NfsFilesystemSource/GlobusEndpointSource)
+    into file_locations, resolving master_ref_id from images.base_name
+    best-effort (a base_name can have no match if the raw/preview hasn't been
+    ingested from blob yet)."""
+    if not rows:
+        return 0
+
+    base_name_to_master_ref_id = dict(
+        conn.execute(
+            "SELECT base_name, master_ref_id FROM images WHERE master_ref_id IS NOT NULL"
+        ).fetchall()
+    )
+    conn.executemany(
+        """
+        INSERT INTO file_locations
+            (base_name, extension, artifact_kind, storage_location, path, batch_label, master_ref_id, size_bytes, mtime_utc, scanned_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(storage_location, path) DO UPDATE SET
+            base_name=excluded.base_name,
+            extension=excluded.extension,
+            artifact_kind=excluded.artifact_kind,
+            batch_label=excluded.batch_label,
+            master_ref_id=excluded.master_ref_id,
+            size_bytes=excluded.size_bytes,
+            mtime_utc=excluded.mtime_utc,
+            scanned_at=excluded.scanned_at
+        """,
+        [
+            (
+                row["base_name"],
+                row["extension"],
+                row["artifact_kind"],
+                row["storage_location"],
+                row["path"],
+                row.get("batch_label"),
+                base_name_to_master_ref_id.get(row["base_name"]),
+                row.get("size_bytes"),
+                row.get("mtime_utc"),
+                row["scanned_at"],
+            )
+            for row in rows
+        ],
+    )
+    return len(rows)

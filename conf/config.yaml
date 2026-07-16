@@ -29,6 +29,14 @@ inspection:
   num_past_days_for_report: 7
   num_images_to_inspect: 50
 
+create_batches:
+  # How many distinct batches (oldest batch_date first) to actually download
+  # per run - the full backlog is still visible in planned_batches regardless
+  # of this limit. Override per run, e.g.:
+  #   python main.py general.task=create_batches_db +pipeline=[create_batches_db] create_batches.max_batches=10
+  # Set to null to remove the cap and process every candidate batch.
+  max_batches: 1
+
 logs:
   logdir: ${general.workdir}/logging
 
@@ -89,6 +97,15 @@ sources:
     type: azure_table
     key_ref: wirlogs
     entity: none
+  - name: nfs_longterm
+    type: filesystem
+    storage_location: nfs
+    root: ${paths.longterm_storage}
+  - name: juno_field_batches
+    type: globus
+    storage_location: juno
+    endpoint_id: 904c2108-90cf-11e8-9672-0a6d4e044368  # SCINet-Juno
+    root_path: # TODO: fill in once the JUNO upload destination path is decided
 
 coalesce_fields:
   UsState: [{source: wirmastermeta, field: UsState}]
