@@ -7,6 +7,11 @@ permanent_merged_table: ${paths.persistent_datadir}/merged_blobs_tables_metadata
 db_path: ${paths.persistent_datadir}/field_exploration.db
 longterm_storage: /mnt/research-projects/r/raatwell/longterm_images3/field-batches
 
+# Where create_batches_db writes newly-batched raws. Defaults to a local
+# in-repo directory for testing - do NOT point this at longterm_storage (the
+# real NFS mount) without explicit sign-off.
+batches_root: /mnt/research-projects/r/raatwell/longterm_images3/field-batches
+
 # temp
 temp_image_dir: ${paths.workdir}/tempdata/temp_images
 
