@@ -37,6 +37,15 @@ create_batches:
   # Set to null to remove the cap and process every candidate batch.
   max_batches: 1
 
+globus:
+  # Collection reviewers already have access to ("NC State Research Storage",
+  # see [[project_multi_location_field_db_plan]]). Confirmed in the Globus
+  # web UI: this collection mirrors the raw rsstu filesystem path 1:1, so
+  # reviewer_collection_base_path matches paths.reportdir exactly (just with
+  # the rsstu export path instead of the local NFS mount point).
+  reviewer_collection_id: 2f7f6170-8d5c-11e9-8e6a-029d279f7e24
+  reviewer_collection_base_path: /rsstu/users/r/raatwell/longterm_images3/field-reports
+
 logs:
   logdir: ${general.workdir}/logging
 
@@ -57,11 +66,19 @@ state_list:
   - NC
   - NC01
   - TX
-  - TX01
   - TX02
   - VA
   - NY
   - OH
+
+# Explicit only - a code is rolled up into another for reporting
+# (db.locations.roll_up_to_parent, used by report_db/plot_by_season_db) only
+# if listed here. Add a line here any time a new code needs folding into a
+# parent - no code changes needed. TX02 is deliberately NOT listed: unlike
+# TX01, it's a separate location, not a sub-code of TX.
+location_rollups:
+  NC01: NC
+  TX01: TX
 
 sources:
   - name: weedsimagerepo

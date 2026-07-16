@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 from pathlib import Path
 
 import pandas as pd
@@ -13,18 +12,25 @@ def _split_name(blob_name: str) -> tuple:
     return (base_name or blob_name), extension.lower()
 
 
-def build_locations(codes: set) -> list:
-    """Infers parent_code for codes like NC01 -> NC (parent must also be in codes)."""
+def build_locations(codes: set, rollups: dict = None) -> list:
+    """Assigns parent_code only for codes explicitly listed in `rollups`
+    (child_code -> parent_code, e.g. {"NC01": "NC"}), not by pattern-matching
+    every '<letters><digits>' code. A blanket regex here previously also
+    caught TX01/TX02 and rolled them into TX, even though those are genuinely
+    separate locations (not a sub-code of TX the way NC01 is a sub-code of
+    NC) - explicit beats inferred for something this consequential."""
+    rollups = rollups or {}
     codes = sorted(codes)
     rows = []
     for code in codes:
-        match = re.match(r"^([A-Z]{2})\d+$", code)
-        parent_code = match.group(1) if match and match.group(1) in codes else None
+        parent_code = rollups.get(code)
+        if parent_code and parent_code not in codes:
+            parent_code = None
         rows.append((code, code, parent_code))
     return rows
 
 
-def upsert_locations(conn, state_list: list, codes_in_data: set) -> None:
+def upsert_locations(conn, state_list: list, codes_in_data: set, rollups: dict = None) -> None:
     missing_from_config = codes_in_data - set(state_list)
     if missing_from_config:
         log.warning(
@@ -32,7 +38,7 @@ def upsert_locations(conn, state_list: list, codes_in_data: set) -> None:
             f"adding them to locations anyway: {sorted(missing_from_config)}"
         )
 
-    rows = build_locations(set(state_list) | codes_in_data)
+    rows = build_locations(set(state_list) | codes_in_data, rollups)
     conn.executemany(
         """
         INSERT INTO locations (code, display_name, parent_code)
