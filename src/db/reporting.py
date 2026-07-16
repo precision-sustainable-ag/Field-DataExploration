@@ -246,6 +246,49 @@ def load_not_started_batch_summary_dataframe(conn) -> pd.DataFrame:
     return pd.read_sql_query(NOT_STARTED_BATCH_SUMMARY_QUERY, conn)
 
 
+# Raws create_batches_db has grouped into a batch and assigned a target NFS
+# path, but that don't have anything on NFS yet (not upserted into
+# file_locations by a scan_file_locations run) - the "still needs to be
+# created" backlog. Rolled up by state rather than one row per batch_label -
+# the backlog can be hundreds of batches, too many for a Slack table (the
+# per-batch detail is in planned_batches itself for anyone who needs it).
+PLANNED_BATCHES_SUMMARY_QUERY = """
+    SELECT
+        location_code AS UsState,
+        COUNT(DISTINCT batch_label) AS PlannedBatchCount,
+        COUNT(*) AS PlannedRawCount
+    FROM planned_batches
+    GROUP BY location_code
+    ORDER BY PlannedRawCount DESC
+"""
+
+
+def load_planned_batches_summary_dataframe(conn) -> pd.DataFrame:
+    """One row per state with planned-but-not-yet-created NFS batches -
+    raws already grouped/targeted by create_batches_db but not made yet."""
+    return pd.read_sql_query(PLANNED_BATCHES_SUMMARY_QUERY, conn)
+
+
+# Processed-image totals by species, sourced from the materialized
+# file_status table (refreshed by scan_file_locations) rather than
+# recomputing the presence join here.
+PROCESSED_BY_SPECIES_QUERY = """
+    SELECT
+        COALESCE(species, 'Unknown') AS Species,
+        COUNT(*) AS ProcessedCount
+    FROM file_status
+    WHERE processed_jpg_in_nfs = 1
+    GROUP BY COALESCE(species, 'Unknown')
+    ORDER BY ProcessedCount DESC
+"""
+
+
+def load_processed_by_species_dataframe(conn) -> pd.DataFrame:
+    """One row per species with a count of processed_jpg_in_nfs=1 images -
+    sum(ProcessedCount) is the overall total-processed-images figure."""
+    return pd.read_sql_query(PROCESSED_BY_SPECIES_QUERY, conn)
+
+
 def missing_processed_jpgs_for_batch(conn, batch_label: str) -> list:
     """base_names with a raw on NFS but no processed_jpg counterpart in the
     same batch, for one batch_label - the detail behind one row of

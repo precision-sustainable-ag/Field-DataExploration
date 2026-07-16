@@ -20,4 +20,5 @@ dependencies = [
     "seaborn==0.13.2",
     "opencv-python==4.9.0.80",
     "requests==2.31.0",
+    "slack-sdk==3.27.1",
 ]

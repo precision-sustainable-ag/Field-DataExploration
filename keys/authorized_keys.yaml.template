@@ -38,3 +38,7 @@ tables:
   wirsoilsmeta:
       url: ""
       sas_token: ""
+
+slack:
+  bot_token: ""
+  channel_id: ""

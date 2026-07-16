@@ -103,7 +103,7 @@ def load_raw_sample_attributes(conn) -> dict:
     return grouped
 
 
-def ensure_locations(conn, state_list) -> None:
+def ensure_locations(conn, state_list, rollups=None) -> None:
     codes_in_data = set()
     for (data,) in conn.execute(
         "SELECT data FROM raw_sample_attributes WHERE source = 'wirmastermeta'"
@@ -111,7 +111,7 @@ def ensure_locations(conn, state_list) -> None:
         us_state = json.loads(data).get("UsState")
         if us_state:
             codes_in_data.add(us_state)
-    upsert_locations(conn, state_list, codes_in_data)
+    upsert_locations(conn, state_list, codes_in_data, rollups)
 
 
 def coalesce_sample(source_rows: dict, coalesce_fields) -> dict:
@@ -204,7 +204,7 @@ def main(cfg: DictConfig) -> None:
     log.info(f"Starting {cfg.general.task}")
     conn = get_connection(cfg.paths.db_path)
     try:
-        ensure_locations(conn, cfg.state_list)
+        ensure_locations(conn, cfg.state_list, cfg.get("location_rollups"))
 
         source_rows_by_master_ref_id = load_raw_sample_attributes(conn)
         num_samples = upsert_samples(conn, source_rows_by_master_ref_id, cfg.coalesce_fields)
