@@ -205,7 +205,7 @@ class BatchReportDb:
 
         with plt.style.context("ggplot"):
             fig, ax = plt.subplots(figsize=(12, 6))
-            sns.barplot(data=unique_ids_count, x="UsState", y="Name", hue="Extension", ax=ax)
+            sns.barplot(data=unique_ids_count, x="UsState", y="Name", hue="Extension", hue_order=["arw", "jpg"], ax=ax)
             ax.set_xticks(ax.get_xticks())
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
             ax.set_title("Missing Raw Uploads by State (all years)")
