@@ -107,7 +107,7 @@ class PlotsBySeasonDb:
             title=f"{self.current_year} Unique MasterRefIDs (samples) by State and Plant Type",
             save_path=f"{self.plots_current_season}/unique_masterrefids_by_state_and_planttype_current_season.png",
             known_states=self.known_states,
-            hue_order=[cover_crop_label, weeds_label, cash_crops_label],
+            hue_order=[cover_crop_label, weeds_label, cash_crops_label, soils_label],
         )
         log.info("Unique MasterRefIDs by state and plant type for current season plot saved.")
 
@@ -155,12 +155,12 @@ class PlotsBySeasonDb:
             sns.barplot(data=unique_ids_count, x="UsState", y="Name", hue="Extension", ax=ax)
             ax.set_xticks(ax.get_xticks())
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
-            ax.set_title(f"{self.current_year} Number of Images by State and by Image Extension")
+            ax.set_title(f"{self.current_year}: Missing Raw Uploads by State")
             ax.set_ylabel("Number of Images")
             ax.set_xlabel("State Location")
             ax.legend(title="Image Type")
             fig.tight_layout()
-            save_path = f"{self.plots_current_season}/image_jpgs_vs_raws_by_species_current_season.png"
+            save_path = f"{self.plots_current_season}/image_jpgs_vs_raws_by_state_current_season.png"
             fig.savefig(save_path, dpi=300)
             plt.close(fig)
             log.info("Jpg vs Raws plot saved for current season.")
