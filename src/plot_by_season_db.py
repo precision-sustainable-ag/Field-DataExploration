@@ -52,34 +52,77 @@ class PlotsBySeasonDb:
         self.df["CameraInfo_DateTime"] = pd.to_datetime(self.df["CameraInfo_DateTime"], errors="coerce", format="%Y-%m-%d %H:%M:%S")
         self.df = self.df.dropna(subset=["CameraInfo_DateTime"])
 
-    def fill_missing_camera_datetime(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Fill in missing CameraInfo_DateTime values by matching entries with the
-        same 'Stem'. Preference is given to JPG files with valid CameraInfo_DateTime."""
-        datetime_lookup = df[
-            (df["CameraInfo_DateTime"].notnull()) & (df["Extension"].str.lower() == "jpg")
-        ][["Stem", "CameraInfo_DateTime"]].drop_duplicates()
+    def fill_missing_camera_datetime(
+        self,
+        df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Fill missing CameraInfo_DateTime values using a JPG with the same Stem.
 
-        df_updated = df.merge(datetime_lookup, on="Stem", how="left", suffixes=("", "_from_jpg"))
-        df_updated["CameraInfo_DateTime"] = df_updated["CameraInfo_DateTime"].fillna(df_updated["CameraInfo_DateTime_from_jpg"])
-        return df_updated.drop(columns=["CameraInfo_DateTime_from_jpg"])
+        Existing CameraInfo_DateTime values are preserved.
+        """
+        jpg_mask = (
+            df["CameraInfo_DateTime"].notna()
+            & df["Extension"].str.casefold().eq("jpg")
+        )
+
+        datetime_lookup = (
+            df.loc[jpg_mask, ["Stem", "CameraInfo_DateTime"]]
+            .drop_duplicates(subset="Stem", keep="first")
+            .set_index("Stem")["CameraInfo_DateTime"]
+        )
+
+        df = df.copy()
+
+        missing_mask = df["CameraInfo_DateTime"].isna()
+
+        df.loc[missing_mask, "CameraInfo_DateTime"] = (
+            df.loc[missing_mask, "Stem"].map(datetime_lookup)
+        )
+
+        return df
 
     def add_season_column(self) -> pd.DataFrame:
         log.info("Adding 'Season' column to the data.")
+
         self.df = self.fill_missing_camera_datetime(self.df)
-        self.df["Season"] = " "
-        for index, row in self.df.iterrows():
-            try:
-                plant_type = row["PlantType"]
-                date_time = row["CameraInfo_DateTime"]
-                if plant_type in ["WEEDS", "CASHCROPS"]:
-                    self.df.at[index, "Season"] = f"{date_time.year} {plant_type}"
-                elif date_time >= pd.Timestamp(year=date_time.year, month=10, day=1):
-                    self.df.at[index, "Season"] = f"{date_time.year}/{date_time.year + 1} {plant_type}"
-                else:
-                    self.df.at[index, "Season"] = f"{date_time.year - 1}/{date_time.year} {plant_type}"
-            except Exception as e:
-                log.warning(f"Error processing row {index}: {e}")
-                self.df.at[index, "Season"] = np.nan
+
+        self.df["CameraInfo_DateTime"] = pd.to_datetime(
+            self.df["CameraInfo_DateTime"],
+            errors="coerce",
+        )
+
+        date_time = self.df["CameraInfo_DateTime"]
+        plant_type = self.df["PlantType"].astype("string").str.upper()
+        year = date_time.dt.year.astype("Int64")
+
+        # Default for weeds, cash crops, and soil collections.
+        self.df["Season"] = (
+            year.astype("string")
+            + " "
+            + plant_type
+        )
+
+        cover_crop_mask = plant_type.eq("COVERCROPS")
+        fall_mask = cover_crop_mask & date_time.dt.month.ge(10)
+        spring_mask = cover_crop_mask & date_time.dt.month.lt(10)
+
+        self.df.loc[fall_mask, "Season"] = (
+            year[fall_mask].astype("string")
+            + "/"
+            + (year[fall_mask] + 1).astype("string")
+            + " COVERCROPS"
+        )
+
+        self.df.loc[spring_mask, "Season"] = (
+            (year[spring_mask] - 1).astype("string")
+            + "/"
+            + year[spring_mask].astype("string")
+            + " COVERCROPS"
+        )
+
+        invalid_mask = date_time.isna() | plant_type.isna()
+        self.df.loc[invalid_mask, "Season"] = pd.NA
 
         current_seasons = [
             f"{self.current_year - 1}/{self.current_year} COVERCROPS",
@@ -87,8 +130,17 @@ class PlotsBySeasonDb:
             f"{self.current_year} CASHCROPS",
             f"{self.current_year} SOILS",
         ]
-        data_current_season = self.df[self.df["Season"].isin(current_seasons)]
-        log.info("Season column added successfully.")
+
+        data_current_season = self.df.loc[
+            self.df["Season"].isin(current_seasons)
+        ].copy()
+
+        log.info(
+            "Season column added successfully. Retained %d of %d rows.",
+            len(data_current_season),
+            len(self.df),
+        )
+
         return data_current_season
 
     def plot_unique_samples_state_plant_current_season(self, data_current_season) -> None:
@@ -152,7 +204,7 @@ class PlotsBySeasonDb:
 
         with plt.style.context("ggplot"):
             fig, ax = plt.subplots(figsize=(12, 6))
-            sns.barplot(data=unique_ids_count, x="UsState", y="Name", hue="Extension", ax=ax)
+            sns.barplot(data=unique_ids_count, x="UsState", y="Name", hue="Extension", hue_order=["arw", "jpg"], ax=ax)
             ax.set_xticks(ax.get_xticks())
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
             ax.set_title(f"{self.current_year}: Missing Raw Uploads by State")

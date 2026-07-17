@@ -27,8 +27,8 @@ log = logging.getLogger(__name__)
 
 # (filename, cfg.paths key for the directory it lives in)
 PLOTS_TO_ATTACH = [
-    ("image_jpgs_vs_raws_by_species_current_season.png", "plots_current_season"),
-    ("image_vs_raws_by_species.png", "plots_all_years"),
+    ("image_jpgs_vs_raws_by_state_current_season.png", "plots_current_season"),
+    ("image_vs_raws_by_state.png", "plots_all_years"),
 ]
 
 
