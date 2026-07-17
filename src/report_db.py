@@ -208,12 +208,12 @@ class BatchReportDb:
             sns.barplot(data=unique_ids_count, x="UsState", y="Name", hue="Extension", ax=ax)
             ax.set_xticks(ax.get_xticks())
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
-            ax.set_title("Number of Images by State and by Image Extension")
+            ax.set_title("Missing Raw Uploads by State (all years)")
             ax.set_ylabel("Number of Images")
             ax.set_xlabel("State Location")
             ax.legend(title="Image Type")
             fig.tight_layout()
-            save_path = f"{self.plots_all_years}/image_vs_raws_by_species.png"
+            save_path = f"{self.plots_all_years}/image_vs_raws_by_state.png"
             fig.savefig(save_path, dpi=300)
             plt.close(fig)
             log.info("Jpg vs Raws plot saved.")
