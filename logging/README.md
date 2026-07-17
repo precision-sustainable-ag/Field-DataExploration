@@ -1,4 +1,0 @@
-# Field-DataExploration
-
-**Logging**
-
