@@ -78,7 +78,7 @@ class InspectRecentUploadsDb:
             num_images = min(len(jpg_df), self.num_images_to_inspect)
             log.info(f"Selecting {num_images} images for state: {state}")
 
-            random_imageurls = jpg_df["ImageURL"].sample(n=num_images).tolist()
+            random_imageurls = jpg_df["ImageURL"].sample(n=num_images, random_state=42, ).tolist()
 
             for url in random_imageurls:
                 try:
