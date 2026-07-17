@@ -62,5 +62,5 @@ Generate status reports and plots (by location, by season) from the current DB s
 ### `migrate_to_db`
 One-off migration of legacy CSV-based batch/location data into the SQLite datastore.
 
-### `image_inspection`
+### `image_inspection_db`
 Facilitates manual quality checks: randomly selects recently-uploaded images and plots each alongside its key metadata fields. Plots are located in the `report/<date>/inspection` folder.
