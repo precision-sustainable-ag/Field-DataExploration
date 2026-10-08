@@ -27,4 +27,11 @@ CRON_LOG_FILE="${CRON_LOG_DIR}/run_weekly_report_$(date +%Y-%m-%d_%H-%M-%S).log"
         "+pipeline=[wir_table_generator,wir_blob_data_generator,merge_samples,append_datetime_db,report_db,plot_by_season_db,scan_file_locations,image_inspection_db,weekly_export,notify_slack]"
 
     echo "Finished weekly field report: $(date -Is)"
+
+    echo "Starting weekly batch creation: $(date -Is)"
+
+    uv run python main.py \
+        "+pipeline=[create_batches_db]"
+
+    echo "Finished weekly batch creation: $(date -Is)"
 } >>"${CRON_LOG_FILE}" 2>&1

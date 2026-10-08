@@ -15,8 +15,11 @@ pipeline:
     - append_datetime_db
     - report_db
     - plot_by_season_db
-    # - image_inspection
+    # - scan_file_locations  # NFS/JUNO scan; runs in scripts/run_weekly_report.sh
+    # - image_inspection_db
     # - create_batches_db
+    # - weekly_export # has to run after report_db, plot_by_season_db, and image_inspection_db
+    # - notify_slack  # posts to Slack; run after weekly_export
 
 general:
   task: # Leave empty as placeholder
@@ -35,7 +38,7 @@ create_batches:
   # of this limit. Override per run, e.g.:
   #   python main.py general.task=create_batches_db +pipeline=[create_batches_db] create_batches.max_batches=10
   # Set to null to remove the cap and process every candidate batch.
-  max_batches: 1
+  max_batches: 75
 
 globus:
   # Collection reviewers already have access to ("NC State Research Storage",
