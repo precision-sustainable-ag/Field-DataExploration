@@ -89,10 +89,12 @@ CREATE TABLE IF NOT EXISTS file_locations (
     storage_location TEXT NOT NULL, -- 'nfs' | 'juno'
     path TEXT NOT NULL,
     batch_label TEXT,
+    sub_batch_index TEXT,           -- raws/<sub_batch_index>/ folder name (e.g. '01'); only set for artifact_kind='raw', NULL for processed_jpg (developed-images/ is flat)
     master_ref_id TEXT REFERENCES samples(master_ref_id),
     size_bytes INTEGER,
     mtime_utc TEXT,
     scanned_at TEXT NOT NULL,
+    first_seen_at TEXT,              -- set once, on first INSERT only (never touched by upsert_file_locations' ON CONFLICT DO UPDATE) - when we first discovered this path, independent of the file's own on-disk mtime_utc (which a timestamp-preserving copy onto NFS can backdate)
     UNIQUE(storage_location, path)
 );
 
@@ -110,9 +112,17 @@ CREATE TABLE IF NOT EXISTS file_status (
     location_code TEXT,
     plant_type TEXT,
     species TEXT,
-    crop_or_fallow TEXT,
-    cover_crop_family TEXT,
+    height TEXT,
+    size_class TEXT,
     growth_stage TEXT,
+    cotton_variety TEXT,
+    crop_or_fallow TEXT,
+    crop_type_secondary TEXT,
+    cover_crop_family TEXT,
+    flower_fruit_or_seeds TEXT,
+    cloud_cover TEXT,
+    ground_residue TEXT,
+    ground_cover TEXT,
     username TEXT,
     has_matching_jpg_and_raw BOOLEAN,
     raw_in_blob BOOLEAN,
@@ -125,6 +135,7 @@ CREATE TABLE IF NOT EXISTS file_status (
     ready_for_juno_upload BOOLEAN,
     batch_id INTEGER REFERENCES batches(id),  -- only set when raw_in_nfs=1
     batch_label TEXT,                         -- batches.batch_label, only set when raw_in_nfs=1
+    sub_batch_index TEXT,                     -- file_locations' raws/<sub_batch_index>/ folder, only set when raw_in_nfs=1
     file_path TEXT,                           -- raw's NFS path, only set when raw_in_nfs=1
     refreshed_at TEXT NOT NULL
 );
@@ -133,6 +144,29 @@ CREATE INDEX IF NOT EXISTS idx_file_status_location_code ON file_status(location
 CREATE INDEX IF NOT EXISTS idx_file_status_needs_processing ON file_status(needs_processing);
 CREATE INDEX IF NOT EXISTS idx_file_status_ready_for_juno_upload ON file_status(ready_for_juno_upload);
 CREATE INDEX IF NOT EXISTS idx_file_status_batch_id ON file_status(batch_id);
+
+-- Per-image detail behind file_status.needs_processing (a raw on NFS with no
+-- processed_jpg counterpart yet), with batch_id/batch_label/sub_batch_index
+-- attached so the backlog can be queried/grouped by sub-batch directly -
+-- db.reporting.load_needs_processing_dataframe/export_needs_processing_csv
+-- just select from this view instead of duplicating the join. Dropped and
+-- recreated on every connection (not CREATE VIEW IF NOT EXISTS) so a future
+-- change to this definition always takes effect on the existing DB - a view
+-- holds no data, so redefining it is free, unlike the ALTER TABLE dance
+-- table/column changes need (see db.connection._apply_column_migrations).
+DROP VIEW IF EXISTS images_needing_processing;
+CREATE VIEW images_needing_processing AS
+    SELECT
+        base_name AS BaseName,
+        master_ref_id AS MasterRefID,
+        location_code AS UsState,
+        species AS Species,
+        batch_id AS BatchId,
+        batch_label AS BatchLabel,
+        sub_batch_index AS SubBatchIndex,
+        file_path AS FilePath
+    FROM file_status
+    WHERE needs_processing = 1;
 
 -- Raws that create_batches_db has grouped into a batch and assigned a target
 -- path under batches_root, but that aren't archived anywhere yet (not on NFS

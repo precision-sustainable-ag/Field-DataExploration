@@ -192,7 +192,8 @@ def upsert_file_locations(conn, rows: list) -> int:
     """Upserts scanned file rows (from NfsFilesystemSource/GlobusEndpointSource)
     into file_locations, resolving master_ref_id from images.base_name
     best-effort (a base_name can have no match if the raw/preview hasn't been
-    ingested from blob yet)."""
+    ingested from blob yet). first_seen_at is set on first insert and then
+    frozen - see the ON CONFLICT clause below."""
     if not rows:
         return 0
 
@@ -204,18 +205,23 @@ def upsert_file_locations(conn, rows: list) -> int:
     conn.executemany(
         """
         INSERT INTO file_locations
-            (base_name, extension, artifact_kind, storage_location, path, batch_label, master_ref_id, size_bytes, mtime_utc, scanned_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (base_name, extension, artifact_kind, storage_location, path, batch_label, sub_batch_index, master_ref_id, size_bytes, mtime_utc, scanned_at, first_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(storage_location, path) DO UPDATE SET
             base_name=excluded.base_name,
             extension=excluded.extension,
             artifact_kind=excluded.artifact_kind,
             batch_label=excluded.batch_label,
+            sub_batch_index=excluded.sub_batch_index,
             master_ref_id=excluded.master_ref_id,
             size_bytes=excluded.size_bytes,
             mtime_utc=excluded.mtime_utc,
             scanned_at=excluded.scanned_at
         """,
+        # first_seen_at is deliberately absent from the DO UPDATE SET above -
+        # on conflict it keeps whatever value it was first inserted with,
+        # even though this same scanned_at value is passed as the candidate
+        # first_seen_at for every row (new or already-known).
         [
             (
                 row["base_name"],
@@ -224,12 +230,43 @@ def upsert_file_locations(conn, rows: list) -> int:
                 row["storage_location"],
                 row["path"],
                 row.get("batch_label"),
+                row.get("sub_batch_index"),
                 base_name_to_master_ref_id.get(row["base_name"]),
                 row.get("size_bytes"),
                 row.get("mtime_utc"),
+                row["scanned_at"],
                 row["scanned_at"],
             )
             for row in rows
         ],
     )
     return len(rows)
+
+
+def delete_stale_file_locations(conn, storage_location: str, current_paths: set) -> int:
+    """Deletes file_locations rows for storage_location whose path isn't in
+    current_paths (this run's full scan of that location). upsert_file_locations
+    only inserts/updates - a file renamed or removed on disk since the last
+    scan (e.g. a batch folder renamed to fix its location code) would
+    otherwise leave a phantom row forever, still counting as raw_in_nfs=1 at
+    its old path. Scoped to one storage_location per call so a source that
+    was skipped this run (e.g. NFS temporarily unmounted, returning no
+    entries) never gets its rows wiped out by an empty current_paths from a
+    *different* source - see scan_file_locations.main, which only calls this
+    for storage_locations that actually produced entries.
+
+    Uses a temp table rather than a `path NOT IN (?, ?, ...)` bound-parameter
+    list - a full NFS scan is 100k+ paths, well past SQLite's ~32766 host
+    parameter limit ("too many SQL variables")."""
+    if not current_paths:
+        return 0
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS _scanned_paths (path TEXT PRIMARY KEY)")
+    conn.execute("DELETE FROM _scanned_paths")
+    conn.executemany("INSERT INTO _scanned_paths (path) VALUES (?)", [(p,) for p in current_paths])
+    cursor = conn.execute(
+        "DELETE FROM file_locations WHERE storage_location = ? "
+        "AND path NOT IN (SELECT path FROM _scanned_paths)",
+        (storage_location,),
+    )
+    conn.execute("DROP TABLE _scanned_paths")
+    return cursor.rowcount
