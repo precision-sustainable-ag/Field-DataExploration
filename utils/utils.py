@@ -1,10 +1,60 @@
+import logging
+import os
 import subprocess
+import time
+from functools import wraps
 from pathlib import Path
 import requests
 
 import exifread
 import pandas as pd
 import yaml
+
+log = logging.getLogger(__name__)
+
+
+def retry_on_permission_error(max_attempts: int = 10, delay: float = 2.0):
+    """Retry the wrapped call when it raises PermissionError.
+
+    The /mnt NFS share (Kerberos-secured autofs) sometimes returns a
+    transient "Permission denied" on the very first touch of a given path
+    per session, while the mount/ticket is still settling - happens to every
+    user, and a plain retry succeeds. An interactive shell "fixes" it by
+    re-running the command by hand; cron doesn't get that chance, so it
+    needs to retry itself.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return func(*args, **kwargs)
+                except PermissionError:
+                    if attempt == max_attempts:
+                        raise
+                    log.warning(
+                        "Permission denied calling %s (attempt %d/%d) - likely the transient "
+                        "/mnt NFS mount race, retrying in %.0fs",
+                        func.__name__, attempt, max_attempts, delay,
+                    )
+                    time.sleep(delay)
+        return wrapper
+    return decorator
+
+
+def warmup_mount_paths(paths, max_attempts: int = 10, delay: float = 2.0) -> None:
+    """Touch each NFS path once, retrying through the transient permission-denied
+    race so downstream pipeline tasks don't each have to handle it themselves."""
+    @retry_on_permission_error(max_attempts=max_attempts, delay=delay)
+    def _touch(path: str) -> None:
+        os.listdir(path)
+
+    seen = set()
+    for path in paths:
+        path = str(path)
+        if path and path not in seen:
+            seen.add(path)
+            _touch(path)
 
 
 def read_yaml(path: str) -> dict:

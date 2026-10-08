@@ -9,6 +9,8 @@ from omegaconf import DictConfig, OmegaConf
 
 sys.path.append("src")
 
+from utils.utils import warmup_mount_paths
+
 log = logging.getLogger(__name__)
 # Get the logger for the Azure SDK
 azlogger = logging.getLogger("azure")
@@ -20,6 +22,8 @@ azlogger.setLevel(logging.WARN)
 def run_FIELD_REPORT(cfg: DictConfig) -> None:
     cfg = OmegaConf.create(cfg)
     whoami = getpass.getuser()
+
+    warmup_mount_paths([cfg.paths.persistent_datadir, cfg.paths.longterm_storage, cfg.paths.reportdir])
 
     tasks = cfg.pipeline
     log.info(f"Running {' ,'.join(tasks)} as {whoami}")
