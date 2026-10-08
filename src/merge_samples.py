@@ -10,6 +10,7 @@ from pathlib import Path
 from omegaconf import DictConfig
 
 from db.connection import get_connection
+from db.locations import apply_location_corrections, infer_location_codes_from_images
 from db.upsert import upsert_locations
 
 log = logging.getLogger(__name__)
@@ -209,6 +210,18 @@ def main(cfg: DictConfig) -> None:
         source_rows_by_master_ref_id = load_raw_sample_attributes(conn)
         num_samples = upsert_samples(conn, source_rows_by_master_ref_id, cfg.coalesce_fields)
         log.info(f"Coalesced {num_samples} samples")
+
+        codes_to_fix = set(cfg.get("invalid_location_codes", []))
+        if codes_to_fix:
+            valid_codes = set(cfg.state_list) - codes_to_fix
+            corrections, unresolved = infer_location_codes_from_images(conn, codes_to_fix, valid_codes)
+            num_corrected = apply_location_corrections(conn, corrections)
+            log.info(f"Corrected location_code for {num_corrected} samples using image filename prefix")
+            if unresolved:
+                log.warning(
+                    f"{len(unresolved)} samples still have an invalid location_code, left unchanged: "
+                    f"{unresolved[:10]}{'...' if len(unresolved) > 10 else ''}"
+                )
 
         update_has_matching_jpg_and_raw(conn)
 

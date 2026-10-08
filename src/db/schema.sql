@@ -154,3 +154,22 @@ CREATE TABLE IF NOT EXISTS planned_batches (
 
 CREATE INDEX IF NOT EXISTS idx_planned_batches_batch_label ON planned_batches(batch_label);
 
+-- Permanent, insert-only audit trail of location_code fixes applied by
+-- db.locations.apply_location_corrections/apply_batch_location_corrections
+-- (invoked by merge_samples.py's self-heal and fix_location_codes.py) - so
+-- "why did this sample's/batch's location change" and "how often is the
+-- field app still getting UsState typed wrong" stay answerable indefinitely,
+-- unlike reportdir_timestamp's weekly report zips which are just a snapshot.
+-- Never updated or deleted, only appended to.
+CREATE TABLE IF NOT EXISTS location_code_corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,     -- 'sample' | 'batch'
+    entity_id TEXT,                -- master_ref_id or batches.id (as text); NULL for a backfilled row where individual ids weren't captured at correction time
+    previous_code TEXT NOT NULL,
+    corrected_code TEXT NOT NULL,
+    corrected_count INTEGER NOT NULL DEFAULT 1,  -- >1 only for a backfilled aggregate row
+    corrected_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_location_code_corrections_corrected_at ON location_code_corrections(corrected_at);
+

@@ -80,6 +80,17 @@ location_rollups:
   NC01: NC
   TX01: TX
 
+# Codes in state_list that aren't real locations - data-entry placeholders
+# some samples' UsState field got typed as by mistake (e.g. 'DV' isn't a US
+# state). merge_samples.py and fix_location_codes.py use this list to find
+# affected samples and correct location_code from the image filename prefix
+# instead (see db.locations.infer_location_codes_from_images) - that prefix
+# reflects the field crew's camera naming, not the hand-typed UsState value.
+# Previously handled with a blanket `DV: MD` rollup, which turned out to be
+# wrong for most DV samples (only ~20% were actually MD; ~78% were OH).
+invalid_location_codes:
+  - DV
+
 sources:
   - name: weedsimagerepo
     type: azure_blob
