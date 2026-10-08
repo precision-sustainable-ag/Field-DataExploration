@@ -1,6 +1,5 @@
 # Hydra defaults and settings. Ignore these (don't change)
 defaults:
-  # - override hydra/job_logging: custom # custom logging 
   - paths: default
   - _self_
 
@@ -12,12 +11,15 @@ hydra:
 pipeline:
     - wir_table_generator
     - wir_blob_data_generator
-    - process_blob_analysis
-    - process_tables_analysis
-    - append_datetime
-    - report
-    - plot_by_season
-    - image_inspection
+    - merge_samples
+    - append_datetime_db
+    - report_db
+    - plot_by_season_db
+    # - scan_file_locations  # NFS/JUNO scan; runs in scripts/run_weekly_report.sh
+    # - image_inspection_db
+    # - create_batches_db
+    # - weekly_export # has to run after report_db, plot_by_season_db, and image_inspection_db
+    # - notify_slack  # posts to Slack; run after weekly_export
 
 general:
   task: # Leave empty as placeholder
@@ -29,6 +31,23 @@ inspection:
   num_past_days_to_inspect: 7
   num_past_days_for_report: 7
   num_images_to_inspect: 50
+
+create_batches:
+  # How many distinct batches (oldest batch_date first) to actually download
+  # per run - the full backlog is still visible in planned_batches regardless
+  # of this limit. Override per run, e.g.:
+  #   python main.py general.task=create_batches_db +pipeline=[create_batches_db] create_batches.max_batches=10
+  # Set to null to remove the cap and process every candidate batch.
+  max_batches: 75
+
+globus:
+  # Collection reviewers already have access to ("NC State Research Storage",
+  # see [[project_multi_location_field_db_plan]]). Confirmed in the Globus
+  # web UI: this collection mirrors the raw rsstu filesystem path 1:1, so
+  # reviewer_collection_base_path matches paths.reportdir exactly (just with
+  # the rsstu export path instead of the local NFS mount point).
+  reviewer_collection_id: 2f7f6170-8d5c-11e9-8e6a-029d279f7e24
+  reviewer_collection_base_path: /rsstu/users/r/raatwell/longterm_images3/field-reports
 
 logs:
   logdir: ${general.workdir}/logging
@@ -50,8 +69,98 @@ state_list:
   - NC
   - NC01
   - TX
-  - TX01
   - TX02
   - VA
   - NY
-  - KS
+  - OH
+
+# Explicit only - a code is rolled up into another for reporting
+# (db.locations.roll_up_to_parent, used by report_db/plot_by_season_db) only
+# if listed here. Add a line here any time a new code needs folding into a
+# parent - no code changes needed. TX02 is deliberately NOT listed: unlike
+# TX01, it's a separate location, not a sub-code of TX.
+location_rollups:
+  NC01: NC
+  TX01: TX
+
+# Codes in state_list that aren't real locations - data-entry placeholders
+# some samples' UsState field got typed as by mistake (e.g. 'DV' isn't a US
+# state). merge_samples.py and fix_location_codes.py use this list to find
+# affected samples and correct location_code from the image filename prefix
+# instead (see db.locations.infer_location_codes_from_images) - that prefix
+# reflects the field crew's camera naming, not the hand-typed UsState value.
+# Previously handled with a blanket `DV: MD` rollup, which turned out to be
+# wrong for most DV samples (only ~20% were actually MD; ~78% were OH).
+invalid_location_codes:
+  - DV
+
+sources:
+  - name: weedsimagerepo
+    type: azure_blob
+    key_ref: weedsimagerepo
+    entity: image
+  - name: wirimagerefs
+    type: azure_table
+    key_ref: wirimagerefs
+    entity: image_ref
+  - name: wirmastermeta
+    type: azure_table
+    key_ref: wirmastermeta
+    entity: sample_attributes
+    master_ref_key: RowKey
+  - name: wircovercropsmeta
+    type: azure_table
+    key_ref: wircovercropsmeta
+    entity: sample_attributes
+  - name: wircropsmeta
+    type: azure_table
+    key_ref: wircropsmeta
+    entity: sample_attributes
+  - name: wirweedsmeta
+    type: azure_table
+    key_ref: wirweedsmeta
+    entity: sample_attributes
+  - name: wirsoilsmeta
+    type: azure_table
+    key_ref: wirsoilsmeta
+    entity: sample_attributes
+  - name: wirlogs
+    type: azure_table
+    key_ref: wirlogs
+    entity: none
+  - name: nfs_longterm
+    type: filesystem
+    storage_location: nfs
+    root: ${paths.longterm_storage}
+  - name: juno_field_batches
+    type: globus
+    storage_location: juno
+    endpoint_id: 904c2108-90cf-11e8-9672-0a6d4e044368  # SCINet-Juno
+    root_path: # TODO: fill in once the JUNO upload destination path is decided
+
+coalesce_fields:
+  UsState: [{source: wirmastermeta, field: UsState}]
+  PlantType: [{source: wirmastermeta, field: PlantType}]
+  CloudCover: [{source: wirmastermeta, field: CloudCover}]
+  GroundResidue: [{source: wirmastermeta, field: GroundResidue}]
+  GroundCover: [{source: wirmastermeta, field: GroundCover}]
+  Username: [{source: wirmastermeta, field: Username}]
+  CoverCropFamily: [{source: wircovercropsmeta, field: CoverCropFamily}]
+  GrowthStage: [{source: wircropsmeta, field: GrowthStage}]
+  CottonVariety: [{source: wircropsmeta, field: CottonVariety}]
+  CropOrFallow: [{source: wirweedsmeta, field: CropOrFallow}]
+  CropTypeSecondary: [{source: wirweedsmeta, field: CropType}]
+  Species:
+    - {source: wirweedsmeta, field: WeedType}
+    - {source: wircovercropsmeta, field: CoverCropSpecies}
+    - {source: wircropsmeta, field: CropName}
+  Height:
+    - {source: wircropsmeta, field: Height}
+    - {source: wirweedsmeta, field: Height}
+  SizeClass:
+    - {source: wircropsmeta, field: SizeClass}
+    - {source: wirweedsmeta, field: SizeClass}
+  FlowerFruitOrSeeds:
+    - {source: wircovercropsmeta, field: FlowerFruitOrSeeds}
+    - {source: wirweedsmeta, field: FlowerFruitOrSeeds}
+

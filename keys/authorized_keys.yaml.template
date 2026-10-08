@@ -7,6 +7,7 @@ blobs:
   
   field-batches:
     read_sas_token:
+    write_sas_token:
     url:
 
 tables:
@@ -33,3 +34,16 @@ tables:
   wirlogs:
       url: ""
       sas_token: ""
+
+  wirsoilsmeta:
+      url: ""
+      sas_token: ""
+
+slack:
+  bot_token: ""
+  # A single Slack user id (bot DMs just that person), or a list of user ids
+  # (e.g. [U0123, U0456]) to open a group DM containing the bot plus everyone
+  # listed - a bot can only post into conversations it's a member of, so this
+  # is the closest equivalent to "post into a DM between two other people".
+  # A real channel id (C.../G.../D.../Z...) works too and is used as-is.
+  channel_id: ""

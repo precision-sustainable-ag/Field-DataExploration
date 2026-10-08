@@ -5,3 +5,10 @@ notebooks
 authorized_keys.yaml
 tempdata
 Image-ExifTool-12.81
+.venv
+.claude
+logging/*
+report
+data
+uv.lock
+.python-version
