@@ -1,0 +1,9 @@
+# Read by `streamlit run` from the repo root (scripts/run_dashboard.sh starts it there).
+[theme]
+primaryColor = "#2a78d6"
+
+[client]
+toolbarMode = "minimal"   # no "Deploy" button
+
+[browser]
+gatherUsageStats = false

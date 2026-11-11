@@ -1,334 +1,667 @@
-"""Example dashboard for the Field-AgIR data: what we have, what we don't,
-and what still needs processing. See docs/dashboard_design.md.
+"""Field-AgIR data dashboard: what we have, what we don't, what still needs processing,
+and what it all takes up on disk.
 
-Runs on SUNNY against the live database (read-only). From the repo root:
+The app only reads a snapshot folder built by dashboard/snapshot.py on SUNNY (where
+long-term storage is mounted) and copied here by scripts/push_snapshot.sh.
 
-    uv run --with streamlit --with plotly \
-        streamlit run dashboard/app.py --server.address 127.0.0.1 --server.port 8601
+    FIELD_DASHBOARD_DATA        snapshot folder (default: dashboard/snapshot)
+    GLOBUS_COLLECTION_ID        optional: Globus collection that holds field-batches
+    GLOBUS_FIELD_BATCHES_PATH   optional: path of field-batches inside that collection
 
-Then open it through VS Code's port forwarding, or
-`ssh -N -L 8601:localhost:8601 <user>@sunny.ece.ncsu.edu` and http://localhost:8601.
+Start it with scripts/run_dashboard.sh (HTTPS on port 8501), or for a quick local look:
+
+    uv run streamlit run dashboard/app.py
 """
-import io
-import sqlite3
-from contextlib import closing
+import json
+import math
+import os
+import random
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
-import numpy as np
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
-from omegaconf import OmegaConf
-from PIL import Image
 
-# Same paths the pipeline uses. Hydra mounts this file under "paths", so wrap it
-# the same way for its ${paths.*} references to resolve.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-PATHS = OmegaConf.create({"paths": OmegaConf.load(REPO_ROOT / "conf/paths/default.yaml")}).paths
-DB_PATH = PATHS.db_path
-FIELD_BATCHES = Path(PATHS.longterm_storage)
+HERE = Path(__file__).resolve().parent
+SNAPSHOT = Path(os.environ.get("FIELD_DASHBOARD_DATA", HERE / "snapshot"))
+GLOBUS_COLLECTION = os.environ.get("GLOBUS_COLLECTION_ID", "").strip()
+GLOBUS_BATCHES_PATH = os.environ.get("GLOBUS_FIELD_BATCHES_PATH", "").strip().rstrip("/")
+STALE_AFTER_DAYS = 8
 
-# Every image lands in exactly one state; each state belongs to one bucket.
-# "Don't have" = missing the raw or the sample metadata, so it can't be processed.
-STATE_BUCKET = {
-    "Cutout": "Have",
-    "Annotated, no plant found": "Have",
-    "Developed, not annotated": "To be processed",
-    "Raw on NFS, not developed": "To be processed",
-    "Raw in blob only": "To be processed",
-    "No raw (never uploaded)": "Don't have",
-    "No metadata": "Don't have",
-}
-BUCKETS = ["Have", "To be processed", "Don't have"]
-
-# Categorical slots 1-3 and the sequential blue ramp from the dataviz reference palette.
-BUCKET_COLORS = {"Have": "#2a78d6", "To be processed": "#eb6834", "Don't have": "#1baf7a"}
-FLAG_COLORS = {"Low": "#eb6834", "OK": "#2a78d6"}
+# Colors from the dataviz reference palette: categorical slots 1-2 plus a neutral for "missing".
+CAT_COLORS = {"Have": "#2a78d6", "To be processed": "#eb6834", "Don't have": "#898781"}
+BELOW, ABOVE = "#eb6834", "#2a78d6"
 BLUE_RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
-
-# Species recorded under two names that share a class_id (see cutout_table_schema.md).
-SPECIES_ALIASES = {
-    "common waterhemp": "waterhemp",
-    "junglerice": "jungle rice",
-    "crabgrass (large or other spp.)": "large crabgrass",
+ACTIONS = {  # order = priority
+    "Collect": ("#d03b3b", "Below target and nothing in the backlog. Needs new field images."),
+    "Process + collect": ("#ec835a", "Processing the backlog helps but won't reach the target on its own."),
+    "Process": ("#fab219", "The backlog should be enough to reach the target."),
+    "Met": ("#0ca30c", "Already at or above the target."),
 }
-
-IMAGES_QUERY = """
-    SELECT fs.base_name, fs.location_code, fs.plant_type, fs.species, fs.batch_label,
-           fs.raw_in_blob, fs.raw_in_nfs, fs.processed_jpg_in_nfs,
-           s.master_ref_id IS NOT NULL AS has_metadata,
-           c.status AS cutout_status, c.cutout_path
-    FROM file_status fs
-    LEFT JOIN samples s ON s.master_ref_id = fs.master_ref_id
-    LEFT JOIN cutouts c ON c.base_name = fs.base_name AND c.cutout_index = 0
-"""
-# Joining images in SQL takes ~40 s over NFS; merging in pandas takes under a second.
-CAPTURE_QUERY = """
-    SELECT base_name, exif_datetime AS captured_at
-    FROM images
-    WHERE base_name IS NOT NULL AND exif_datetime IS NOT NULL
-"""
-SAMPLES_WITHOUT_IMAGES_QUERY = """
-    SELECT master_ref_id, location_code, plant_type, species
-    FROM samples
-    WHERE master_ref_id NOT IN (SELECT master_ref_id FROM file_status WHERE master_ref_id IS NOT NULL)
-"""
+ROLE_LABEL = {"raws": "Raw images", "developed": "Developed JPGs", "cutouts": "Cutouts", "masks": "Masks", "unknown": "Unknown"}
+DIM_COLS = ["plant_type", "location", "season", "species"]
 
 
-def classify(df: pd.DataFrame) -> np.ndarray:
-    has_raw = df.raw_in_blob.eq(1) | df.raw_in_nfs.eq(1) | df.processed_jpg_in_nfs.eq(1)
-    conditions = [
-        df.cutout_status.isin(["detected_segmented", "segmented"]),
-        df.cutout_status.eq("no_detection"),
-        ~has_raw,
-        df.has_metadata.eq(0),
-        df.processed_jpg_in_nfs.eq(1),
-        df.raw_in_nfs.eq(1),
-    ]
-    choices = [
-        "Cutout",
-        "Annotated, no plant found",
-        "No raw (never uploaded)",
-        "No metadata",
-        "Developed, not annotated",
-        "Raw on NFS, not developed",
-    ]
-    return np.select(conditions, choices, default="Raw in blob only")
+# ---------- formatting ----------
+def fmt(n) -> str:
+    return f"{int(round(n)):,}" if n is not None and not (isinstance(n, float) and math.isnan(n)) else "–"
 
 
-def season(captured_at: pd.Series, plant_type: pd.Series) -> pd.Series:
-    """Same rule as plot_by_season_db.py in Field-DataExploration: cover crops
-    run October-September (labeled 2025/2026), everything else by calendar year."""
-    year = captured_at.dt.year.astype("Int64")
-    cover = plant_type.eq("COVERCROPS")
-    start = year.where(~(cover & captured_at.dt.month.lt(10)), year - 1)
-    label = year.astype("string").mask(cover, start.astype("string") + "/" + (start + 1).astype("string"))
-    return label.fillna("Unknown")
+def pct(n, d) -> str:
+    return f"{100 * n / d:.{1 if d and n / d < 0.1 else 0}f}%" if d else "–"
 
 
-def clean_dimensions(df: pd.DataFrame) -> pd.DataFrame:
-    for column in ["location_code", "plant_type", "species"]:
-        df[column] = df[column].replace("", None).fillna("Unknown")
-    df["species"] = df["species"].replace(SPECIES_ALIASES)
-    return df
+def size(n) -> str:
+    if n is None or (isinstance(n, float) and math.isnan(n)):
+        return "–"
+    units, i = ["B", "KB", "MB", "GB", "TB", "PB"], 0
+    while n >= 1000 and i < len(units) - 1:
+        n, i = n / 1000, i + 1
+    return f"{n:.2f} {units[i]}" if i and n < 10 else f"{n:.1f} {units[i]}" if i and n < 100 else f"{round(n)} {units[i]}"
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading the field database...")
-def load_data() -> tuple[pd.DataFrame, pd.DataFrame, str]:
-    with closing(sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)) as conn:
-        images = pd.read_sql_query(IMAGES_QUERY, conn)
-        captured = pd.read_sql_query(CAPTURE_QUERY, conn)
-        samples_without_images = pd.read_sql_query(SAMPLES_WITHOUT_IMAGES_QUERY, conn)
-        refreshed_at = conn.execute("SELECT max(refreshed_at) FROM file_status").fetchone()[0]
-
-    for column in ["raw_in_blob", "raw_in_nfs", "processed_jpg_in_nfs", "has_metadata"]:
-        images[column] = images[column].fillna(0).astype(int)
-
-    # A base_name can have a raw and a preview row in images; take the earliest capture time.
-    captured = captured.groupby("base_name", as_index=False)["captured_at"].min()
-    df = images.merge(captured, on="base_name", how="left")
-    df["captured_at"] = pd.to_datetime(df["captured_at"], errors="coerce")
-
-    df = clean_dimensions(df)
-    df["state"] = classify(df)
-    df["bucket"] = df["state"].map(STATE_BUCKET)
-    df["season"] = season(df["captured_at"], df["plant_type"])
-    return df, clean_dimensions(samples_without_images), refreshed_at
+def short(v: float) -> str:
+    return f"{v / 1e6:g}M" if v >= 1e6 else f"{v / 1e3:g}k" if v >= 1e3 else f"{v:g}"
 
 
-@st.cache_data(max_entries=500, show_spinner=False)
-def thumbnail(rel_path: str) -> bytes:
-    with Image.open(FIELD_BATCHES / rel_path) as img:
-        img.thumbnail((360, 360))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-    return buf.getvalue()
+def when(stamp) -> str:
+    return str(stamp)[:16].replace("T", " ") + " UTC" if stamp else "unknown"
 
 
-def ordered_states(columns) -> list[str]:
-    return [state for state in STATE_BUCKET if state in columns]
+def dot(color: str) -> str:
+    return f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:{color};margin-right:5px"></span>'
 
 
-st.set_page_config(page_title="Field-AgIR data", layout="wide")
-df, samples_without_images, refreshed_at = load_data()
+# ---------- loading ----------
+@st.cache_data(show_spinner="Loading the snapshot...")
+def load(folder: str, mtime: float) -> dict:
+    """Read data.json and turn its compact arrays into DataFrames. mtime is only part of the
+    cache key, so a new snapshot is picked up as soon as it lands."""
+    D = json.loads((Path(folder) / "data.json").read_text(encoding="utf-8"))
+    dims = D["dims"]
+    codes = lambda col, dim: pd.Categorical.from_codes(col, categories=dims[dim])  # noqa: E731
 
-st.title("Field-AgIR data")
-st.caption(
-    f"Read-only view of field_exploration.db. File status last rebuilt "
-    f"{refreshed_at[:16].replace('T', ' ')} UTC; this page caches it for an hour."
-)
+    rows = pd.DataFrame(D["rows"], columns=["pt", "loc", "season", "species", "state", "status", "images", "cutouts"])
+    cube = pd.DataFrame({
+        "plant_type": codes(rows.pt, "plant_type"), "location": codes(rows["loc"], "location_code"),
+        "season": codes(rows.season, "season"), "species": codes(rows.species, "species"),
+        "state": codes(rows.state, "state"), "status": [dims["status"][i] for i in rows.status],
+        "images": rows.images, "cutouts": rows.cutouts,
+    })
+    cube["category"] = cube.state.map(D["state_category"]).astype(str)
 
-f1, f2, f3 = st.columns(3)
-plant_types = f1.multiselect("Plant type", sorted(df.plant_type.unique()), placeholder="All")
-locations = f2.multiselect("Location", sorted(df.location_code.unique()), placeholder="All")
-season_options = sorted((s for s in df.season.unique() if s != "Unknown"), reverse=True) + ["Unknown"]
-seasons = f3.multiselect("Season", season_options, placeholder="All")
+    s = pd.DataFrame(D["samples"], columns=["pt", "loc", "species", "samples", "season"])
+    samples = pd.DataFrame({
+        "plant_type": codes(s.pt, "plant_type"), "location": codes(s["loc"], "location_code"),
+        "species": codes(s.species, "species"), "season": codes(s.season, "season"), "samples": s.samples,
+    })
 
-view = df
-samples_view = samples_without_images
-if plant_types:
-    view = view[view.plant_type.isin(plant_types)]
-    samples_view = samples_view[samples_view.plant_type.isin(plant_types)]
-if locations:
-    view = view[view.location_code.isin(locations)]
-    samples_view = samples_view[samples_view.location_code.isin(locations)]
-if seasons:
-    view = view[view.season.isin(seasons)]
+    thumbs = pd.DataFrame(D["thumbs"]) if D["thumbs"] else pd.DataFrame(
+        columns=["species", "location", "plant_type", "season", "name", "batch", "path", "w", "h", "thumb", "full"])
+    for col, dim in [("species", "species"), ("location", "location_code"), ("plant_type", "plant_type"), ("season", "season")]:
+        thumbs[col] = [dims[dim][i] for i in thumbs[col]] if len(thumbs) else thumbs[col]
 
-if view.empty:
-    st.info("No images match these filters.")
+    S = D["storage"]
+    disk = pd.DataFrame(S.get("rows", []), columns=["pt", "loc", "product", "files", "bytes"])
+    if len(disk):
+        disk["plant_type"] = [dims["plant_type"][i] if i >= 0 else None for i in disk.pt]
+        disk["location"] = [dims["location_code"][i] if i >= 0 else None for i in disk["loc"]]
+        disk["product"] = [S["products"][i] for i in disk["product"]]
+        disk["role"] = disk["product"].map(S["roles"]).fillna("unknown")
+    return {"D": D, "cube": cube, "samples": samples, "thumbs": thumbs, "disk": disk}
+
+
+# ---------- page ----------
+st.set_page_config(page_title="Field-AgIR data", page_icon=":seedling:", layout="wide")
+
+data_file = SNAPSHOT / "data.json"
+if not data_file.exists():
+    st.title("Field-AgIR data")
+    st.error(f"No snapshot found at `{SNAPSHOT}`. Build one on SUNNY with `dashboard/snapshot.py` and copy it here "
+             "with `scripts/push_snapshot.sh`, or point `FIELD_DASHBOARD_DATA` at a snapshot folder.")
     st.stop()
 
-overview, coverage, gaps, todo_tab, browse = st.tabs(
-    ["Overview", "Coverage", "Gaps", "To be processed", "Browse"]
-)
+L = load(str(SNAPSHOT), data_file.stat().st_mtime)
+D, cube_all, samples_all, thumbs_all, disk_all = L["D"], L["cube"], L["samples"], L["thumbs"], L["disk"]
+STATES, CATEGORIES = D["dims"]["state"], D["categories"]
+TOTAL = cube_all.groupby("category").images.sum()
+CPI = cube_all.cutouts.sum() / max(1, TOTAL.get("Have", 0))  # cutouts per annotated image, incl. images with no plant
 
-with overview:
-    counts = view.bucket.value_counts()
-    tiles = st.columns(5)
-    tiles[0].metric("Images", f"{len(view):,}")
-    for tile, bucket in zip(tiles[1:4], BUCKETS):
-        tile.metric(bucket, f"{counts.get(bucket, 0):,}")
-    tiles[4].metric(
-        "Samples with no images",
-        f"{len(samples_view):,}",
-        help="Sample records with no image at all. Not affected by the season filter.",
-    )
+st.title("Field-AgIR data")
+built = datetime.strptime(D["generated_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+age = (datetime.now(timezone.utc) - built).days
+st.caption(f"Database last rebuilt {when(D['refreshed_at'])} · snapshot built {when(D['generated_at'])}")
+if age > STALE_AFTER_DAYS:
+    st.warning(f"This snapshot is {age} days old. The weekly update from SUNNY may have stopped.")
+failed = [c for c in D["checks"] if not c["ok"]]
+if failed:
+    st.error(f"Some counts may be wrong: {len(failed)} consistency check(s) failed. See Data issues.")
 
-    by_type = view.groupby(["plant_type", "bucket"]).size().reset_index(name="images")
-    fig = px.bar(
-        by_type, x="images", y="plant_type", color="bucket", orientation="h",
-        color_discrete_map=BUCKET_COLORS, category_orders={"bucket": BUCKETS},
-        labels={"images": "Images", "plant_type": "", "bucket": ""},
-    )
-    fig.update_yaxes(categoryorder="total ascending")
-    fig.update_layout(bargap=0.4, height=340, legend=dict(orientation="h", y=1.12), margin=dict(t=40))
-    st.plotly_chart(fig, width="stretch")
+# ---------- global filters ----------
+def reset_filters():
+    for k in ("f_pt", "f_loc", "f_season"):
+        st.session_state[k] = []
 
-    state_table = view.pivot_table(
-        index="state", columns="plant_type", values="base_name", aggfunc="count", fill_value=0
-    )
-    state_table = state_table.reindex(ordered_states(state_table.index))
-    state_table["Total"] = state_table.sum(axis=1)
-    state_table.insert(0, "Category", state_table.index.map(STATE_BUCKET))
-    st.dataframe(state_table, width="stretch")
 
-with coverage:
-    measure = st.radio(
-        "Count", ["Usable images (raw + metadata)", "All images", "Cutouts"], horizontal=True
-    )
-    subset = {
-        "Usable images (raw + metadata)": view[view.bucket != "Don't have"],
-        "All images": view,
-        "Cutouts": view[view.state == "Cutout"],
-    }[measure]
-    if subset.empty:
-        st.info("Nothing to show for these filters.")
+f1, f2, f3, f4 = st.columns([1, 1, 1, 0.6], vertical_alignment="bottom")
+f_pt = f1.multiselect("Plant type", D["dims"]["plant_type"], placeholder="All", key="f_pt")
+f_loc = f2.multiselect("Location", D["dims"]["location_code"], placeholder="All", key="f_loc")
+f_season = f3.multiselect("Season", D["dims"]["season"], placeholder="All", key="f_season")
+f4.button("Reset filters", on_click=reset_filters, width="stretch")
+
+
+def apply_filters(df: pd.DataFrame, season: bool = True) -> pd.DataFrame:
+    mask = pd.Series(True, index=df.index)
+    for col, chosen in (("plant_type", f_pt), ("location", f_loc), ("season", f_season if season else [])):
+        if chosen and col in df:
+            mask &= df[col].isin(chosen)
+    return df[mask]
+
+
+cube = apply_filters(cube_all)
+n_images = int(cube.images.sum())
+st.caption(f"{fmt(n_images)} images" if n_images == cube_all.images.sum()
+           else f"Showing {fmt(n_images)} of {fmt(cube_all.images.sum())} images")
+backlog_of = lambda df: df.images.where(df.category == "To be processed", 0)  # noqa: E731
+
+tabs = st.tabs(["Overview", "Coverage", "Priorities", "Data issues", "Browse", "Storage", "How it's counted"], key="tab")
+
+
+# ---------- overview ----------
+with tabs[0]:
+    by_cat = cube.groupby("category").images.sum()
+    by_state = cube.groupby("state", observed=False).images.sum()
+    plants = int(cube.loc[cube.state == "Cutout", "images"].sum())
+    n_samples = int(apply_filters(samples_all).samples.sum())
+    tiles = [("Images", n_images, "all image records" if not (f_pt or f_loc or f_season) else f"of {fmt(cube_all.images.sum())} in total")]
+    tiles += [(c, by_cat.get(c, 0), f"{pct(by_cat.get(c, 0), n_images)} of images") for c in CATEGORIES]
+    tiles += [("Cutouts", cube.cutouts.sum(), f"segmented plants, from {fmt(plants)} images"),
+              ("Samples with no images", n_samples, "field records no image points to")]
+    for col, (label, value, sub) in zip(st.columns(len(tiles)), tiles):
+        col.metric(label, fmt(value), border=True)
+        col.caption(sub)
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Where the images stop")
+        st.caption("Each bar is a subset of the one above it. Hover a bar to see how many images didn't reach it, and why.")
+        have = by_cat.get("Have", 0)
+        stages = [
+            ("All images", n_images, "Every image record in file_status.", ""),
+            ("Raw + metadata", n_images - by_cat.get("Don't have", 0), "Has a raw image and a matching sample record.", "missing the raw image or the metadata"),
+            ("Developed", have + by_state.get("Developed, not annotated", 0), "Raw developed to JPG (or already annotated).", "have a raw that isn't developed yet"),
+            ("Annotated", have, "Went through the annotation pipeline.", "developed but not annotated yet"),
+            ("Plant found", plants, "Annotation found and segmented at least one plant.", "annotated, but no plant was found"),
+        ]
+        hover = [f"<b>{n}</b>: {fmt(v)} ({pct(v, n_images)} of all)<br>{d}" + (f"<br>Not here: {fmt(stages[i - 1][1] - v)} {lost}" if i else "")
+                 for i, (n, v, d, lost) in enumerate(stages)]
+        fig = go.Figure(go.Bar(
+            y=[s[0] for s in stages], x=[s[1] for s in stages], orientation="h", marker_color=CAT_COLORS["Have"],
+            text=[f"{fmt(v)} · {pct(v, n_images)}" for _, v, _, _ in stages], textposition="outside", cliponaxis=False,
+            hovertext=hover, hoverinfo="text"))
+        fig.update_yaxes(autorange="reversed")
+        fig.update_xaxes(visible=False, range=[0, max(1, n_images) * 1.25])
+        fig.update_layout(height=260, margin=dict(l=0, r=10, t=10, b=10), bargap=0.35)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    with right:
+        st.subheader("Category by plant type")
+        by_type = cube.groupby(["plant_type", "category"], observed=True).images.sum().reset_index()
+        order = by_type.groupby("plant_type", observed=True).images.sum().sort_values().index.tolist()
+        fig = go.Figure()
+        for c in CATEGORIES:
+            part = by_type[by_type.category == c].set_index("plant_type").reindex(order).images.fillna(0)
+            fig.add_bar(y=[str(o) for o in order], x=part.values, name=c, orientation="h", marker_color=CAT_COLORS[c],
+                        hovertemplate=f"%{{y}} · {c}<br>%{{x:,}} images<extra></extra>")
+        fig.update_layout(barmode="stack", height=260, margin=dict(l=0, r=10, t=10, b=10), bargap=0.35,
+                          legend=dict(orientation="h", y=1.15, x=0, traceorder="normal"))
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+    st.subheader("Week by week")
+    hist = pd.DataFrame(D["history"])
+    if len(hist) >= 2:
+        st.caption("Totals from each weekly build, all data (filters don't apply here).")
+        fig = go.Figure()
+        for c in CATEGORIES:
+            fig.add_scatter(x=hist.refreshed_at.str[:10], y=hist[c], name=c, mode="lines+markers",
+                            line=dict(color=CAT_COLORS[c], width=2), hovertemplate=f"%{{x}} · {c}<br>%{{y:,}} images<extra></extra>")
+        fig.update_layout(height=280, margin=dict(l=0, r=10, t=10, b=10), legend=dict(orientation="h", y=1.15, x=0))
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     else:
-        pivot = subset.pivot_table(index="species", columns="location_code", values="base_name", aggfunc="count")
-        pivot = pivot.loc[pivot.sum(axis=1).sort_values(ascending=False).index]
-        text = pivot.map(lambda v: "" if pd.isna(v) else f"{int(v):,}")
-        fig = px.imshow(
-            pivot, aspect="auto", color_continuous_scale=BLUE_RAMP,
-            labels=dict(x="Location", y="Species", color="Images"),
-        )
-        fig.update_traces(
-            text=text.values, texttemplate="%{text}", hoverongaps=False,
-            hovertemplate="%{y} at %{x}<br>%{z:,} images<extra></extra>",
-        )
-        fig.update_xaxes(side="top")
-        fig.update_layout(height=max(400, 22 * len(pivot) + 140))
-        st.caption("Blank cells mean no images for that species at that location.")
-        st.plotly_chart(fig, width="stretch")
+        st.caption(f"The trend appears once there are two weekly builds. This is build {len(hist)}.")
 
-with gaps:
-    st.subheader("Don't have")
-    st.caption("Images missing the raw or the sample metadata. These can't be processed.")
-    missing = view[view.bucket == "Don't have"]
-    if missing.empty:
-        st.write("None for these filters.")
+    st.subheader("Images by state and plant type")
+    table = cube.pivot_table(index="state", columns="plant_type", values="images", aggfunc="sum", observed=True, fill_value=0)
+    table = table.reindex([s for s in STATES if s in table.index])
+    table.columns = [str(c) for c in table.columns]
+    table["Total"] = table.sum(axis=1)
+    table.insert(0, "Category", [D["state_category"][s] for s in table.index])
+    table.loc["Total"] = ["", *table.drop(columns="Category").sum().tolist()]
+    st.dataframe(table, width="stretch", column_config={c: st.column_config.NumberColumn(format="localized")
+                                                         for c in table.columns if c != "Category"})
+
+
+# ---------- coverage ----------
+with tabs[1]:
+    st.subheader("Coverage")
+    c1, c2 = st.columns(2)
+    measure = c1.segmented_control("Count", ["Cutouts", "Backlog", "Expected cutouts"], default="Cutouts", required=True, key="cov_measure")
+    col_label = c2.segmented_control("Columns", ["Location", "Season", "Plant type"], default="Location", required=True, key="cov_cols")
+    col = {"Location": "location", "Season": "season", "Plant type": "plant_type"}[col_label]
+    st.caption({
+        "Cutouts": "Segmented plants, by the species of the image they came from. Blank cells have none.",
+        "Backlog": "Images with a raw and metadata that haven't been annotated yet. Processing these could fill blank cells.",
+        "Expected cutouts": f"Cutouts now plus what the backlog should add: {CPI:.1f} cutouts per backlog image, the average per annotated image so far.",
+    }[measure])
+    values = {"Cutouts": cube.cutouts, "Backlog": backlog_of(cube), "Expected cutouts": cube.cutouts + backlog_of(cube) * CPI}[measure]
+    grid = cube.assign(v=values).groupby(["species", col], observed=True).v.sum().round().unstack(fill_value=0)
+    species_present = cube.species.unique()
+    grid = grid.reindex([s for s in grid.index if s in species_present])
+    if grid.empty:
+        st.info("Nothing for these filters.")
     else:
-        missing_table = missing.pivot_table(
-            index="location_code", columns="state", values="base_name", aggfunc="count", fill_value=0
-        )
-        missing_table["Total"] = missing_table.sum(axis=1)
-        st.dataframe(missing_table.sort_values("Total", ascending=False), width="stretch")
-    st.markdown(f"**Sample records with no images:** {len(samples_view):,}")
-    if not samples_view.empty:
-        st.dataframe(
-            samples_view.groupby(["plant_type", "location_code"]).size().rename("samples")
-            .reset_index().sort_values("samples", ascending=False),
-            hide_index=True,
-        )
+        if col != "season":
+            grid = grid[sorted(grid.columns, key=str)]
+        totals = grid.sum(axis=1)
+        grid = grid.loc[totals.sort_values(ascending=False).index]
+        totals = grid.sum(axis=1)
+        z = grid.where(grid > 0)
+        top = max(1.0, float(grid.values.max()))
+        fig = go.Figure(go.Heatmap(
+            z=(z + 1).apply(lambda c: c.map(math.log10)).values, x=[str(c) for c in grid.columns],
+            y=[f"{s}  ({fmt(t)})" for s, t in totals.items()], text=z.map(lambda v: "" if pd.isna(v) else fmt(v)).values,
+            texttemplate="%{text}", textfont=dict(size=11), customdata=grid.values, xgap=2, ygap=2,
+            colorscale=[[i / (len(BLUE_RAMP) - 1), c] for i, c in enumerate(BLUE_RAMP)], zmin=0, zmax=math.log10(top + 1),
+            hovertemplate=f"%{{y}} · %{{x}}<br>%{{customdata:,}} {measure.lower()}<extra></extra>",
+            colorbar=dict(title=dict(text=measure, side="right"), tickvals=[math.log10(v + 1) for v in [1, 10, 100, 1000, 10000, 100000] if v <= top],
+                          ticktext=[short(v) for v in [1, 10, 100, 1000, 10000, 100000] if v <= top])))
+        fig.update_xaxes(side="top", tickangle=-45 if len(grid.columns) > 8 else 0)
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(height=max(320, 24 * len(grid) + 140), margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.caption("Species totals in brackets. Colors are on a log scale; blank cells have none.")
 
-    st.subheader("Low counts")
-    g1, g2, g3 = st.columns(3)
-    group_by = g1.selectbox("Group by", ["Species", "Location", "Species and location"])
-    low_measure = g2.selectbox("Count", ["Usable images", "Cutouts"])
-    pct = g3.slider("Flag groups below this % of the median", 5, 100, 25, step=5)
 
-    keys = {"Species": ["species"], "Location": ["location_code"], "Species and location": ["species", "location_code"]}[group_by]
-    counted = view[view.bucket != "Don't have"] if low_measure == "Usable images" else view[view.state == "Cutout"]
-    grouped = counted.groupby(keys).size().rename("count").reset_index()
-    if grouped.empty:
-        st.info("Nothing to count for these filters.")
+# ---------- priorities ----------
+NICE = sorted({f * 10 ** k for k in range(0, 7) for f in (1, 2, 5)})
+if "target" not in st.session_state:
+    st.session_state.target = int(D["target"])
+
+
+def set_target(key: str):
+    st.session_state.target = max(1, int(st.session_state[key]))
+
+
+with tabs[2]:
+    st.subheader("What to do next")
+    group_label = st.segmented_control("Group by", ["Species", "Plant type"], default="Species", required=True, key="prio_group")
+    key = "species" if group_label == "Species" else "plant_type"
+    noun = "species" if key == "species" else "plant types"
+    target = st.session_state.target
+    st.session_state.t_input, st.session_state.t_slider = target, target  # keep both controls in step
+    t1, t2, t3 = st.columns([1, 2.4, 0.8], vertical_alignment="bottom")
+    t1.number_input("Target per group (cutouts)", min_value=1, step=10, key="t_input", on_change=set_target, args=("t_input",))
+    t2.select_slider("Slide to set the target (log steps)", options=sorted(set(NICE) | {target}), key="t_slider",
+                     on_change=set_target, args=("t_slider",), format_func=lambda v: fmt(v))
+    t3.button("Use placeholder", on_click=lambda: st.session_state.update(target=int(D["target"])), width="stretch",
+              help=f"Median cutouts per species: {fmt(D['target'])}")
+
+    groups = cube.assign(backlog=backlog_of(cube), dont=cube.images.where(cube.category == "Don't have", 0)) \
+        .groupby(key, observed=True)[["cutouts", "backlog", "dont"]].sum().reset_index().rename(columns={key: "name"})
+    groups["name"] = groups["name"].astype(str)
+    groups["expected"] = (groups.cutouts + (groups.backlog * CPI).round()).astype(int)
+    groups["shortfall"] = (target - groups.cutouts).clip(lower=0)
+    groups["action"] = [("Met" if c >= target else "Process" if e >= target else "Process + collect" if b > 0 else "Collect")
+                        for c, e, b in zip(groups.cutouts, groups.expected, groups.backlog)]
+    placeholder = D["target_is_placeholder"] and target == D["target"]
+    st.markdown(
+        f"Each row is one {'species' if key == 'species' else 'plant type'}. The target is **{fmt(target)}** cutouts per group"
+        f"{' (a placeholder: the median species, until we agree on a real number)' if placeholder else ''}. "
+        f"**Expected** = cutouts now + {CPI:.1f} per backlog image, the average per annotated image so far.")
+
+    bars = groups.sort_values(["cutouts", "name"], ascending=[True, False])  # plotly draws bottom-up
+    n_below = int((groups.cutouts < target).sum())
+    st.markdown(f"**Choosing the target** · {fmt(n_below)} of {fmt(len(groups))} {noun} below {fmt(target)} cutouts. "
+                f"{dot(BELOW)}below {dot(ABOVE)}at or above · click a bar to use its count as the target.", unsafe_allow_html=True)
+    if bars.empty:
+        st.info("Nothing for these filters.")
     else:
-        median = grouped["count"].median()
-        threshold = median * pct / 100
-        grouped["flag"] = np.where(grouped["count"] < threshold, "Low", "OK")
-        flagged = grouped[grouped.flag == "Low"].sort_values("count")
+        top_v = max(10, target, int(bars.cutouts.max())) * 1.1
+        top = next(f * 10 ** math.floor(math.log10(top_v)) for f in (1, 2, 5, 10) if f * 10 ** math.floor(math.log10(top_v)) >= top_v)
+        fig = go.Figure(go.Bar(
+            y=bars.name, x=bars.cutouts.clip(lower=1), orientation="h",
+            marker_color=[BELOW if v < target else ABOVE for v in bars.cutouts],
+            text=[fmt(v) for v in bars.cutouts], textposition="outside", cliponaxis=False,
+            customdata=bars[["cutouts", "backlog", "expected", "action"]].values,
+            hovertemplate="<b>%{y}</b><br>%{customdata[0]:,} cutouts · %{customdata[1]:,} backlog images"
+                          "<br>expected %{customdata[2]:,} · %{customdata[3]}<extra></extra>",
+            unselected=dict(marker=dict(opacity=1)), selected=dict(marker=dict(opacity=1))))
+        fig.add_vline(x=target, line_width=2, line_color="#7f7f7f")
+        fig.add_annotation(x=math.log10(target), y=1, xref="x", yref="paper", yanchor="bottom", showarrow=False,
+                           text=f"<b>Target {fmt(target)}</b>", bgcolor="#52514e", font=dict(color="#ffffff", size=12),
+                           borderpad=3)
+        fig.update_xaxes(type="log", range=[0, math.log10(top)], dtick=1, tickformat="~s",
+                         title="cutouts per group (log scale)", side="bottom")
+        height = 24 * len(bars) + 110
+        fig.update_layout(height=height, margin=dict(l=0, r=40, t=36, b=10), bargap=0.3, dragmode=False)
+        box = st.container(height=min(640, height + 20)) if height > 640 else st.container()
+        event = box.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points", key="target_chart",
+                                 config={"displayModeBar": False})
+        points = (event or {}).get("selection", {}).get("points", []) if event else []
+        if points:  # a click selects one bar; apply it once
+            picked = (key, points[0].get("y"))
+            if picked != st.session_state.get("last_pick"):
+                st.session_state.last_pick = picked
+                st.session_state.target = max(1, int(groups.set_index("name").cutouts.get(points[0].get("y"), target)))
+                st.rerun()
+
+    counts = groups.action.value_counts()
+    st.markdown(" &nbsp; ".join(f"{dot(c)}{a} **{counts.get(a, 0)}**" for a, (c, _) in ACTIONS.items()), unsafe_allow_html=True,
+                help="\n\n".join(f"**{a}**: {tip}" for a, (_, tip) in ACTIONS.items()))
+    show_met = st.checkbox("Show groups that meet the target")
+    shown = groups if show_met else groups[groups.action != "Met"]
+    shown = shown.sort_values(["shortfall", "name"], ascending=[False, True])
+    out = shown.rename(columns={"name": "Species" if key == "species" else "Plant type", "cutouts": "Cutouts",
+                                "backlog": "Backlog images", "expected": "Expected cutouts", "shortfall": "Short of target",
+                                "dont": "Can't process", "action": "Action"})[
+        ["Species" if key == "species" else "Plant type", "Cutouts", "Backlog images", "Expected cutouts", "Short of target", "Can't process", "Action"]]
+    st.dataframe(out, width="stretch", hide_index=True,
+                 column_config={c: st.column_config.NumberColumn(format="localized") for c in out.columns[1:6]})
+    st.download_button("Download table as CSV", out.assign(Target=target).to_csv(index=False), "priorities.csv", "text/csv")
+
+
+# ---------- data issues ----------
+with tabs[3]:
+    st.subheader("Consistency checks")
+    st.caption("Run against the database when the snapshot was built. A failed check means some counts are wrong.")
+    st.table(pd.DataFrame([{
+        "Check": c["check"], "What it means": c.get("what", ""), "Expected": fmt(c["expected"]), "Actual": fmt(c["actual"]),
+        "Result": "Pass" if c["ok"] else "Fail: " + c["hint"]} for c in D["checks"]]).set_index("Check"))
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Images we can't process")
+        st.caption("Missing the raw image or the sample metadata.")
+        dont = cube[cube.category == "Don't have"].pivot_table(index="location", columns="state", values="images",
+                                                              aggfunc="sum", observed=True, fill_value=0)
+        if dont.empty:
+            st.caption("None for these filters.")
+        else:
+            dont.columns = [str(c) for c in dont.columns]
+            dont["Total"] = dont.sum(axis=1)
+            st.dataframe(dont.sort_values("Total", ascending=False), width="stretch",
+                         column_config={c: st.column_config.NumberColumn(format="localized") for c in dont.columns})
+    with right:
+        st.subheader("Samples with no images")
+        st.caption("A sample is a field record in the samples table (species, location, plant type), identified by "
+                   "master_ref_id; each image points to its sample. These samples have no image pointing to them: raws not "
+                   "uploaded, an ID mismatch, or never photographed. Season is when the sample was recorded in the field app.")
+        ns = apply_filters(samples_all).groupby(["plant_type", "location", "season"], observed=True).samples.sum()
+        ns = ns[ns > 0].sort_values(ascending=False).reset_index()
+        if ns.empty:
+            st.caption("None for these filters.")
+        else:
+            ns.columns = ["Plant type", "Location", "Season recorded", "Samples"]
+            st.dataframe(ns, width="stretch", hide_index=True)
+            st.caption(f"Total: {fmt(ns.Samples.sum())}")
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Unrecognised annotation status")
+        known = ", ".join(f"`{s}`" for s in D["plant_statuses"] + D["no_plant_statuses"])
+        st.caption(f"The classification recognises {known}. Images whose first cutout row has any other status are counted "
+                   "in the backlog by their raw/developed state.")
+        odd = cube[cube.status != ""].groupby(["status", "state"], observed=True).images.sum().reset_index()
+        if odd.empty:
+            st.caption("None. Every annotation status is recognised.")
+        else:
+            odd.columns = ["Status", "Counted as", "Images"]
+            st.dataframe(odd.sort_values("Images", ascending=False), width="stretch", hide_index=True)
+    with right:
+        st.subheader("Unknown values")
+        st.caption('Images with a blank field. They are counted, but land in an "Unknown" row or column.')
+        st.dataframe(pd.DataFrame([{"Field": label, "Images": int(cube.loc[cube[col].astype(str) == "Unknown", "images"].sum()),
+                                    "Share": pct(cube.loc[cube[col].astype(str) == "Unknown", "images"].sum(), n_images)}
+                                   for label, col in [("Species", "species"), ("Location", "location"),
+                                                      ("Plant type", "plant_type"), ("Season (no capture time)", "season")]]),
+                     width="stretch", hide_index=True, column_config={"Images": st.column_config.NumberColumn(format="localized")})
+
+
+# ---------- browse ----------
+def globus_link(cutout_path: str) -> str:
+    if not (GLOBUS_COLLECTION and GLOBUS_BATCHES_PATH):
+        return ""
+    return (f"https://app.globus.org/file-manager?origin_id={quote(GLOBUS_COLLECTION)}"
+            f"&origin_path={quote(GLOBUS_BATCHES_PATH + '/' + str(Path(cutout_path).parent) + '/')}")
+
+
+@st.dialog("Cutout", width="large")
+def show_cutout(t: dict):
+    full = SNAPSHOT / t["full"] if t.get("full") else None
+    st.markdown(f"**{t['species']}** · {t['name']}  \n{t['plant_type']} · {t['location']} · {t['season']}"
+                f"{' · batch ' + t['batch'] if t['batch'] else ''} · {fmt(t['w'])} × {fmt(t['h'])} px  \n`{t['path']}`")
+    b1, b2 = st.columns(2)
+    if full and full.exists():
+        b1.download_button("Download full resolution (WebP)", full.read_bytes(), f"{t['name']}.webp", "image/webp", width="stretch")
+    link = globus_link(t["path"])
+    if link:
+        b2.link_button("Open the original in Globus", link, width="stretch")
+    else:
+        b2.caption("Set GLOBUS_COLLECTION_ID and GLOBUS_FIELD_BATCHES_PATH to link to the original file in Globus.")
+    # Scale so the whole cutout fits on screen (about 620 px tall); the download keeps every pixel.
+    shown_width = max(200, min(1100, int(620 * t["w"] / max(1, t["h"]))))
+    st.image(str(full if full and full.exists() else SNAPSHOT / t["thumb"]), width=shown_width)
+
+
+with tabs[4]:
+    st.subheader("Cutout samples")
+    if thumbs_all.empty:
+        st.info("This snapshot was built without cutouts.")
+    else:
+        unreadable = f" ({fmt(D['thumbs_failed'])} files could not be read)" if D["thumbs_failed"] else ""
+        st.caption(f"Up to {D['thumbs_per_group']} cutouts per species × location, picked at random when the snapshot was "
+                   f"built{unreadable}. The filters at the top apply too. Click View to see a cutout full size.")
+        base = apply_filters(thumbs_all)
+        controls = [("plant_type", "Plant type", "b_pt"), ("location", "Location", "b_loc"), ("season", "Season", "b_season"), ("species", "Species", "b_species")]
+
+        def matches(df, skip=None):
+            for col, _, k in controls:
+                v = st.session_state.get(k, "All")
+                if col != skip and v != "All":
+                    df = df[df[col] == v]
+            return df
+
+        cols = st.columns(len(controls) + 1, vertical_alignment="bottom")
+        for (col, label, k), c in zip(controls, cols):
+            avail = matches(base, skip=col)[col].value_counts()
+            opts = ["All"] + sorted(avail.index, key=lambda v: (D["dims"]["season"].index(v) if col == "season" else 0, str(v)))
+            if st.session_state.get(k, "All") not in opts:
+                st.session_state[k] = "All"
+            c.selectbox(label, opts, key=k, format_func=lambda v, a=avail: f"All ({fmt(a.sum())})" if v == "All" else f"{v} ({a.get(v, 0)})")
+        if cols[-1].button("Shuffle", width="stretch"):
+            st.session_state.b_seed = random.random()
+        shown = matches(base)
+        if "b_seed" in st.session_state:
+            shown = shown.sample(frac=1, random_state=int(st.session_state.b_seed * 1e6))
+        else:
+            shown = shown.sort_values(["species", "name"])
+        limit = st.session_state.get("b_limit", 48)
+        if shown.empty:
+            st.info("No cutouts for these filters.")
+        per_row = 6
+        records = shown.head(limit).to_dict("records")
+        for start in range(0, len(records), per_row):
+            for t, c in zip(records[start:start + per_row], st.columns(per_row)):
+                with c:
+                    st.image(str(SNAPSHOT / t["thumb"]), width="stretch")
+                    st.caption(f"**{t['species']}**  \n{t['name']}  \n{t['location']} · {t['season']}")
+                    if st.button("View", key=f"view_{t['name']}", width="stretch"):
+                        show_cutout(t)
+        if len(shown) > limit and st.button(f"Show more ({fmt(len(shown) - limit)} hidden)"):
+            st.session_state.b_limit = limit + 96
+            st.rerun()
+
+
+# ---------- storage ----------
+with tabs[5]:
+    S = D["storage"]
+    if not S.get("scanned"):
+        st.info(f"Storage wasn't measured in this snapshot: {S.get('reason', 'unknown reason')}.")
+    else:
+        disk = disk_all.copy()
+        if f_pt:
+            disk = disk[disk.plant_type.isin(f_pt)]
+        if f_loc:
+            disk = disk[disk.location.isin(f_loc)]
+        all_by_role = disk_all.groupby("role")[["files", "bytes"]].sum()
+        avg = lambda role: (all_by_role.loc[role, "bytes"] / all_by_role.loc[role, "files"]) if role in all_by_role.index and all_by_role.loc[role, "files"] else None  # noqa: E731
+        total, files = int(disk.bytes.sum()), int(disk.files.sum())
+        by_role = disk.groupby("role").bytes.sum()
+
+        st_counts = cube.groupby("state", observed=False).images.sum()
+        backlog = int(backlog_of(cube).sum())
+        not_dev = int(st_counts.get("Raw on NFS, not developed", 0) + st_counts.get("Raw in blob only", 0))
+        blob_only = int(st_counts.get("Raw in blob only", 0))
+        future = [
+            ("Cutouts from the backlog", f"{fmt(backlog)} backlog images × {CPI:.1f} cutouts each", round(backlog * CPI), avg("cutouts"), "cutouts"),
+            ("Developed JPGs still to make", f"{fmt(not_dev)} images with a raw but no JPG", not_dev, avg("developed"), "developed"),
+            ("Raws to copy from blob to NFS", f"{fmt(blob_only)} raws only in blob (Azure) storage", blob_only, avg("raws"), "raws"),
+        ]
+        future_total = sum(n * a for _, _, n, a, _ in future if a)
+
+        tiles = [("On disk now", size(total), f"{fmt(files)} files in field-batches")]
+        tiles += [(ROLE_LABEL[r], size(by_role.get(r, 0)), f"about {size(avg(r))} each" if avg(r) else "no folder found")
+                  for r in ("raws", "developed", "cutouts")]
+        tiles += [("Still to come", "≈ " + size(future_total), "if the backlog is processed")]
+        for col, (label, value, sub) in zip(st.columns(len(tiles)), tiles):
+            col.metric(label, value, border=True)
+            col.caption(sub)
+
+        st.subheader("By data product")
+        st.caption(f"Each product is a subfolder inside the batch folders under `{S['root']}`. "
+                   "`unknown` is files sitting directly in a batch folder.")
+        prods = disk.groupby("product").agg(files=("files", "sum"), bytes=("bytes", "sum")).sort_values("bytes", ascending=False)
+        st.dataframe(pd.DataFrame({
+            "Folder": prods.index, "Holds": [ROLE_LABEL.get(S["roles"].get(p, "unknown"), "Unknown") for p in prods.index],
+            "Files": prods.files.values, "Size": [size(b) for b in prods.bytes], "Average file": [size(b / f if f else 0) for f, b in zip(prods.files, prods.bytes)],
+            "Share": (prods.bytes / max(1, total)).values,
+            "File types": [", ".join(f"{e} ({fmt(f)})" for e, f, _ in S["extensions"].get(p, [])) for p in prods.index]}),
+            width="stretch", hide_index=True,
+            column_config={"Files": st.column_config.NumberColumn(format="localized"),
+                           "Share": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1)})
+
+        unknown = S.get("unknown", {})
+        if unknown:
+            st.subheader("Unknown folders and files")
+            st.caption(f"Data the dashboard can't identify as raws, developed JPGs, cutouts or masks. Paths are relative to "
+                       f"`{S['root']}` and cover all data (filters don't apply).")
+            for prod, u in unknown.items():
+                prod_bytes = int(disk_all.loc[disk_all["product"] == prod, "bytes"].sum())
+                what = (f"{fmt(u['total'])} loose file{'s' * (u['total'] != 1)} directly in batch folders" if u["kind"] == "files"
+                        else f"subfolder in {fmt(u['total'])} batch folder{'s' * (u['total'] != 1)}")
+                with st.expander(f"`{prod}` · {what} · {size(prod_bytes)}"):
+                    items = pd.DataFrame(u["items"], columns=["Path", "Files", "Bytes"])
+                    items["Size"] = items.Bytes.map(size)
+                    st.dataframe(items[["Path", "Files", "Size"]], width="stretch", hide_index=True, height=min(400, 35 * len(items) + 40))
+                    if u["total"] > len(u["items"]):
+                        st.caption(f"Showing the {fmt(len(u['items']))} largest of {fmt(u['total'])}.")
+            all_paths = pd.DataFrame([(p, u["kind"], S["root"].rstrip("/") + "/" + path, f, b)
+                                      for p, u in unknown.items() for path, f, b in u["items"]],
+                                     columns=["product", "kind", "path", "files", "bytes"])
+            st.download_button("Download all paths as CSV", all_paths.to_csv(index=False), "unknown_storage_paths.csv", "text/csv")
+
+        st.subheader("Still to come")
+        st.caption("Rough storage the backlog will need, using today's average file size for each product. Counts follow the filters.")
+        st.dataframe(pd.DataFrame(
+            [{"What": w, "Based on": b, "Files": n, "Average file": size(a) if a else "–",
+              "Estimated size": size(n * a) if a else f"no {r} folder found"} for w, b, n, a, r in future]
+            + [{"What": "Total", "Based on": "", "Files": None, "Average file": "", "Estimated size": "≈ " + size(future_total)}]),
+            width="stretch", hide_index=True, column_config={"Files": st.column_config.NumberColumn(format="localized")})
+
+        def size_bars(df: pd.DataFrame, by: str, title: str, holder):
+            agg = df.dropna(subset=[by]).groupby(by).bytes.sum().sort_values()
+            holder.subheader(title)
+            if agg.empty:
+                holder.caption("Nothing for these filters.")
+                return
+            fig = go.Figure(go.Bar(y=agg.index, x=agg.values, orientation="h", marker_color=CAT_COLORS["Have"],
+                                   text=[size(v) for v in agg.values], textposition="outside", cliponaxis=False,
+                                   hovertemplate="%{y}<br>%{text}<extra></extra>"))
+            fig.update_xaxes(visible=False, range=[0, agg.max() * 1.25])
+            fig.update_layout(height=max(160, 26 * len(agg) + 40), margin=dict(l=0, r=10, t=10, b=10), bargap=0.3)
+            holder.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+        left, right = st.columns(2)
+        size_bars(disk, "location", "By location", left)
+        size_bars(disk, "plant_type", "By plant type", right)
+
+        st.subheader("Storage over time")
+        sh = pd.DataFrame(D["history"])
+        sh = sh[sh.get("storage_bytes").notna()] if "storage_bytes" in sh else sh.iloc[0:0]
+        if len(sh) >= 2:
+            fig = go.Figure(go.Scatter(x=sh.refreshed_at.str[:10], y=sh.storage_bytes, mode="lines+markers",
+                                       line=dict(color=CAT_COLORS["Have"], width=2), text=[size(v) for v in sh.storage_bytes],
+                                       hovertemplate="%{x}<br>%{text}<extra></extra>"))
+            fig.update_yaxes(tickformat="~s", ticksuffix="B")
+            fig.update_layout(height=260, margin=dict(l=0, r=10, t=10, b=10))
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        else:
+            st.caption("The trend appears once two weekly snapshots have measured storage.")
+        unmatched = S.get("unmatched_batches", 0)
+        unreadable = f", {fmt(S['errors'])} entries could not be read" if S["errors"] else ""
         st.caption(
-            f"Median {median:,.0f} per group, so groups under {threshold:,.0f} are flagged: "
-            f"{len(flagged)} of {len(grouped)}. Groups with none at all aren't listed; "
-            f"they're the blank cells on the Coverage tab."
-        )
-        if len(keys) == 1:
-            fig = px.bar(
-                grouped.sort_values("count"), x="count", y=keys[0], color="flag", orientation="h",
-                color_discrete_map=FLAG_COLORS, category_orders={"flag": ["Low", "OK"]},
-                labels={"count": low_measure, keys[0]: "", "flag": ""},
-            )
-            fig.update_yaxes(categoryorder="total ascending")
-            fig.add_vline(x=threshold, line_dash="dot", line_width=1, line_color="#52514e")
-            fig.update_layout(bargap=0.3, height=max(320, 18 * len(grouped) + 100), legend=dict(orientation="h", y=1.05))
-            st.plotly_chart(fig, width="stretch")
-        st.dataframe(flagged.drop(columns="flag"), hide_index=True)
+            f"Measured {when(D['generated_at'])} by walking {fmt(S['batches'])} batch folders ({S['seconds']} s{unreadable}). "
+            f"Sizes in decimal units (1 TB = 1,000 GB). Files are matched to their image by name ({pct(S['matched_share'], 1)} of bytes); "
+            "the rest take the plant type and location most images in their batch folder have. The season filter doesn't apply here"
+            + (f", and {fmt(unmatched)} batch folder(s) not in file_status are left out while filters are on." if unmatched else ".")
+            + " Blob (Azure) storage isn't measured; only the raws still to copy are estimated.")
 
-with todo_tab:
-    todo = view[view.bucket == "To be processed"]
-    st.caption("Images with both a raw and sample metadata that haven't been turned into cutouts yet.")
-    if todo.empty:
-        st.write("Nothing waiting for these filters.")
-    else:
-        todo_table = todo.pivot_table(
-            index=["location_code", "plant_type", "species"], columns="state",
-            values="base_name", aggfunc="count", fill_value=0,
-        )
-        todo_table = todo_table[ordered_states(todo_table.columns)]
-        todo_table["Total"] = todo_table.sum(axis=1)
-        st.dataframe(todo_table.sort_values("Total", ascending=False).reset_index(), hide_index=True, width="stretch")
-        st.download_button(
-            f"Download the {len(todo):,} images as CSV",
-            todo[["base_name", "state", "location_code", "plant_type", "species", "batch_label", "season"]].to_csv(index=False),
-            file_name="to_be_processed.csv",
-            mime="text/csv",
-        )
 
-with browse:
-    with_cutouts = view[view.state == "Cutout"]
-    if with_cutouts.empty:
-        st.info("No cutouts for these filters.")
-    else:
-        species_counts = with_cutouts.species.value_counts()
-        species = st.selectbox(
-            "Species", species_counts.index, format_func=lambda s: f"{s} ({species_counts[s]:,} cutouts)"
-        )
-        if st.button("Show 8 random cutouts"):
-            picks = with_cutouts[with_cutouts.species == species].sample(min(8, int(species_counts[species])))
-            columns = st.columns(4)
-            for i, row in enumerate(picks.itertuples()):
-                with columns[i % 4]:
-                    try:
-                        st.image(thumbnail(row.cutout_path), caption=f"{row.base_name} · {row.location_code} · {row.batch_label}")
-                    except FileNotFoundError:
-                        st.warning(f"File not found: {row.cutout_path}")
+# ---------- definitions ----------
+with tabs[6]:
+    rules = {
+        "Cutout": "First cutout row has status " + " or ".join(f"`{s}`" for s in D["plant_statuses"]) + ".",
+        "Annotated, no plant found": "First cutout row has status " + " or ".join(f"`{s}`" for s in D["no_plant_statuses"]) + ".",
+        "No raw (never uploaded)": "No raw in blob storage, no raw on NFS and no developed JPG on NFS.",
+        "No metadata": "No matching `samples` row for the image's `master_ref_id`.",
+        "Developed, not annotated": "Developed JPG on NFS, not yet annotated.",
+        "Raw on NFS, not developed": "Raw on NFS, not developed.",
+        "Raw in blob only": "Raw only in blob (Azure) storage.",
+    }
+    st.subheader("How images are counted")
+    st.markdown("One row in `file_status` is one image. Each image gets exactly one state: the first rule below that matches, top to bottom.")
+    st.table(pd.DataFrame([{"#": i + 1, "State": s, "Category": D["state_category"][s], "Rule": rules.get(s, "")}
+                           for i, s in enumerate(STATES)]).set_index("#"))
+    aliases = ", ".join(f"`{a}` → `{b}`" for a, b in D["aliases"].items()) or "None."
+    st.markdown(f"""
+**Categories.** *Have*: annotation is done. *To be processed*: raw image and metadata exist, processing isn't finished.
+*Don't have*: the raw or the metadata is missing, so it can't be processed.
+
+**Samples.** A sample is a field record in `samples` (species, location, plant type), identified by `master_ref_id`.
+Images take their species and location from their sample. "Samples with no images" are records no image points to.
+
+**Cutouts.** Every segmented plant in `cutouts` for images in the Cutout state. One image can give several cutouts.
+Species comes from the image's sample record, not from individual cutouts.
+
+**Seasons.** From the earliest EXIF capture time in `images`. Plant type `{D['cover_crop_type']}` runs October to
+September (e.g. `2025/2026`); everything else is the calendar year. No capture time → `Unknown`.
+
+**Species names merged.** {aliases}
+
+**Priorities.** For each group: *Met* if cutouts ≥ target; *Process* if cutouts plus the expected yield of the backlog
+reach the target; *Process + collect* if the backlog helps but falls short; *Collect* if there's no backlog. Expected
+yield is {CPI:.2f} cutouts per backlog image: all cutouts so far divided by all annotated images (including those where
+no plant was found).
+
+**Storage.** The snapshot walks every batch folder under field-batches and adds up file sizes by the first subfolder
+(the data product). Raws, developed JPGs and cutouts are recognised from folder names and file types; anything else is
+*Unknown*, listed with its paths. "Still to come" multiplies backlog counts by today's average file sizes.
+
+**Where the numbers come from.** `dashboard/snapshot.py` runs on SUNNY against `field_exploration.db` (read-only),
+writes this snapshot, and `scripts/push_snapshot.sh` copies it here. The backlog list is in the snapshot folder as
+`to_be_processed.csv`.
+""")
+    todo_csv = SNAPSHOT / "to_be_processed.csv"
+    if todo_csv.exists():
+        st.download_button("Download the full backlog (to_be_processed.csv)", todo_csv.read_bytes(), "to_be_processed.csv", "text/csv")

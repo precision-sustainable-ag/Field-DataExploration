@@ -11,4 +11,5 @@ logging/*
 report
 data
 uv.lock
-.python-version
+.python-versiondashboard/snapshot/
+scripts/dashboard.env
