@@ -64,6 +64,12 @@ CUTOUT_COUNT_QUERY = f"""
     WHERE status IN ({", ".join(f"'{s}'" for s in PLANT_STATUSES)})
     GROUP BY base_name
 """
+# Every segmented plant and where its file is, for the Browse list.
+CUTOUT_LIST_QUERY = f"""
+    SELECT base_name, cutout_index, cutout_path
+    FROM cutouts
+    WHERE status IN ({", ".join(f"'{s}'" for s in PLANT_STATUSES)}) AND cutout_path IS NOT NULL
+"""
 SAMPLES_WITHOUT_IMAGES_QUERY = """
     SELECT master_ref_id, location_code, plant_type, species, {recorded} AS recorded_at
     FROM samples
@@ -127,6 +133,7 @@ def load(db_path: str) -> dict:
         images = pd.read_sql_query(IMAGES_QUERY, conn)
         captured = pd.read_sql_query(CAPTURE_QUERY, conn)
         cutout_counts = pd.read_sql_query(CUTOUT_COUNT_QUERY, conn)
+        cutout_list = pd.read_sql_query(CUTOUT_LIST_QUERY, conn)
         sample_columns = {row[1] for row in conn.execute("PRAGMA table_info(samples)")}
         stamps = [c for c in SAMPLE_TIMESTAMP_COLUMNS if c in sample_columns]
         recorded = f"COALESCE({', '.join(stamps)})" if len(stamps) > 1 else (stamps[0] if stamps else "NULL")
@@ -173,8 +180,15 @@ def load(db_path: str) -> dict:
             "hint": "Fewer distinct names than rows means some images are listed twice and counted twice.",
         },
     ]
+    # Cutouts of images in the Cutout state, labelled with their image's species, place and season.
+    labels = df.loc[df.state == "Cutout", ["base_name", "species", "plant_type", "location_code", "season", "batch_label"]]
+    cutout_list = cutout_list.merge(labels, on="base_name", how="inner") \
+        .sort_values(["species", "location_code", "base_name", "cutout_index"],
+                     key=lambda col: col.str.lower() if pd.api.types.is_string_dtype(col) else col).reset_index(drop=True)
+
     return {
         "images": df,
+        "cutout_list": cutout_list,
         "samples_without_images": with_season(clean_dimensions(samples_without_images)),
         "refreshed_at": refreshed_at,
         "checks": checks,

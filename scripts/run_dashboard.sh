@@ -13,6 +13,7 @@ cd "$ROOT"
 [ -f scripts/dashboard.env ] && set -a && . scripts/dashboard.env && set +a
 
 PORT="${PORT:-8501}"
+ADDRESS="${SERVER_ADDRESS:-$(hostname -I | awk '{print $1}')}"  # the address people open; also stops Streamlit looking up its public IP
 CERT_DIR="${FIELD_DASHBOARD_CERT_DIR:-$HOME/.config/field-dashboard}"
 STATE_DIR="${FIELD_DASHBOARD_STATE_DIR:-$HOME/.local/state/field-dashboard}"
 PID_FILE="$STATE_DIR/dashboard.pid"
@@ -37,11 +38,12 @@ start() {
         --server.sslKeyFile "$CERT_DIR/key.pem" \
         --server.fileWatcherType none \
         --browser.gatherUsageStats false \
+        --browser.serverAddress "$ADDRESS" \
         >>"$LOG_FILE" 2>&1 &
     echo $! >"$PID_FILE"
     for _ in $(seq 1 30); do
         if curl -skf "https://127.0.0.1:$PORT/_stcore/health" >/dev/null 2>&1; then
-            echo "Dashboard up at https://$(hostname -I | awk '{print $1}'):$PORT (pid $(cat "$PID_FILE")). Log: $LOG_FILE"
+            echo "Dashboard up at https://$ADDRESS:$PORT (pid $(cat "$PID_FILE")). Log: $LOG_FILE"
             return 0
         fi
         sleep 2
@@ -66,7 +68,7 @@ case "${1:-status}" in
     restart) stop; sleep 2; start ;;
     status)
         if running && curl -skf "https://127.0.0.1:$PORT/_stcore/health" >/dev/null 2>&1; then
-            echo "Running and healthy (pid $(cat "$PID_FILE")), https://$(hostname -I | awk '{print $1}'):$PORT"
+            echo "Running and healthy (pid $(cat "$PID_FILE")), https://$ADDRESS:$PORT"
         elif running; then
             echo "Process is up (pid $(cat "$PID_FILE")) but not answering. See $LOG_FILE"; exit 1
         else

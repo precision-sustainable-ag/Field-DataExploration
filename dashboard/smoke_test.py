@@ -23,6 +23,13 @@ def check(at: AppTest, step: str) -> None:
     print(f"ok  {step}")
 
 
+def open_tab(at: AppTest, label: str) -> None:
+    """Tabs are lazy and bound to ?tab=..., so switching the query parameter opens one."""
+    at.query_params["tab"] = label
+    at.run()
+    check(at, f"opened {label}")
+
+
 def main() -> None:
     folder = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("FIELD_DASHBOARD_DATA", str(HERE / "snapshot"))
     os.environ["FIELD_DASHBOARD_DATA"] = folder
@@ -34,6 +41,7 @@ def main() -> None:
     assert tabs == expected, f"tabs are {tabs}"
     print(f"ok  tabs: {', '.join(tabs)}")
 
+    open_tab(at, "Coverage")
     for value in ["Backlog", "Expected cutouts", "Cutouts"]:
         at.segmented_control(key="cov_measure").set_value(value).run()
         check(at, f"Coverage count = {value}")
@@ -41,6 +49,7 @@ def main() -> None:
         at.segmented_control(key="cov_cols").set_value(value).run()
         check(at, f"Coverage columns = {value}")
 
+    open_tab(at, "Priorities")
     at.number_input(key="t_input").set_value(50).run()
     check(at, "Priorities target typed (50)")
     assert at.session_state.target == 50, at.session_state.target
@@ -54,6 +63,7 @@ def main() -> None:
     at.segmented_control(key="prio_group").set_value("Species").run()
     check(at, "Priorities grouped by species")
 
+    open_tab(at, "Data issues")
     for widget in ("f_pt", "f_loc", "f_season"):
         options = at.multiselect(key=widget).options
         if options:
@@ -62,16 +72,23 @@ def main() -> None:
     at.button[0].click().run()  # Reset filters
     check(at, "filters reset")
 
+    open_tab(at, "Browse")
     for k in ("b_pt", "b_loc", "b_season", "b_species"):
         box = at.selectbox(key=k)
         if len(box.options) > 1:
             box.set_value(box.options[1].rsplit(" (", 1)[0]).run()  # options are shown as "name (count)"
             check(at, f"Browse {k} = {at.selectbox(key=k).value}")
             at.selectbox(key=k).set_value("All").run()
+    assert at.dataframe, "Browse table missing"
+    at.text_input(key="b_search").set_value("A0").run()
+    check(at, "Browse: search by image name")
+    at.text_input(key="b_search").set_value("").run()
     views = [b for b in at.button if b.key and b.key.startswith("view_")]
     if views:
         views[0].click().run()
         check(at, "Browse: opened a cutout full size")
+    open_tab(at, "Storage")
+    open_tab(at, "How it's counted")
     print("PASS")
 
 

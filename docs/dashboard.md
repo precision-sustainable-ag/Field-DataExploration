@@ -74,12 +74,23 @@ encrypted; a certificate browsers trust would need NC State IT.
 `git pull`, then `scripts/run_dashboard.sh restart` on hopper-os. Changes to `snapshot.py`
 also need a `git pull` on SUNNY; they show up after the next snapshot.
 
-## Optional: Globus links on Browse
+Each tab has its own address, so you can share a link straight to one, e.g.
+`https://10.76.169.110:8501/?tab=Browse`.
 
-Set `GLOBUS_COLLECTION_ID` (the collection holding long-term storage) and
-`GLOBUS_FIELD_BATCHES_PATH` (the path of `field-batches` inside it) in
-`scripts/dashboard.env` on hopper-os, then restart. Each cutout's viewer gets an
-"Open the original in Globus" button.
+## Globus links on Browse
+
+Browse lists every cutout (species, location, season, batch, file path), with all
+matching rows on screen and a CSV download. Each row can link to the real file in Globus:
+
+1. In the Globus website (app.globus.org), sign in with NCSU and open the
+   `field-batches` folder on the collection that holds long-term storage.
+2. From the browser's address bar, copy `origin_id=...` into `GLOBUS_COLLECTION_ID`
+   and `origin_path=...` into `GLOBUS_FIELD_BATCHES_PATH` in `scripts/dashboard.env`.
+3. Optional: if the collection's overview page shows an **HTTPS URL**, put it in
+   `GLOBUS_HTTPS_URL`. Links then open the image itself instead of its folder.
+4. `scripts/run_dashboard.sh restart`.
+
+Viewers need Globus access to that collection to open the links.
 
 ## Troubleshooting
 

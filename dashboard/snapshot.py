@@ -8,6 +8,7 @@ Run on SUNNY from the repo root (read-only against the live database):
 
 Writes to the folder (default dashboard/snapshot/):
     data.json             counts, storage summary, history and settings for the app
+    cutouts.parquet       every cutout: species, location, season, batch and file path (Browse list)
     thumbs/, full/        cutout thumbnails and full-resolution copies (WebP) for Browse
     to_be_processed.csv   every image in the processing backlog
     history.csv           one row of totals per database refresh (feeds the trend charts)
@@ -281,6 +282,11 @@ def main() -> None:
         storage_bytes = int(scan["frame"]["bytes"].sum())
     history = update_history(out_dir / "history.csv", images, loaded["refreshed_at"], generated_at, storage_bytes)
 
+    cutout_list = loaded["cutout_list"].rename(columns={"location_code": "location", "batch_label": "batch"})
+    tmp = out_dir / "cutouts.parquet.tmp"
+    cutout_list.to_parquet(tmp, index=False)
+    os.replace(tmp, out_dir / "cutouts.parquet")
+
     todo = images[images.category == "To be processed"]
     todo[["base_name", "master_ref_id", "state", "location_code", "plant_type", "species", "season", "batch_label"]] \
         .sort_values(["state", "location_code", "species", "base_name"]) \
@@ -305,6 +311,7 @@ def main() -> None:
         "thumbs_failed": failed_thumbs,
         "thumbs_per_group": args.thumbs_per_group,
         "storage": disk,
+        "field_batches": args.storage,
     }
     write_json_atomically(out_dir / "data.json", payload)
 
@@ -312,7 +319,7 @@ def main() -> None:
     print(f"Wrote snapshot to {out_dir}")
     print(f"  {len(images):,} images: " + ", ".join(f"{c} {counts.get(c, 0):,}" for c in data.CATEGORIES))
     print(f"  {len(samples):,} samples without images; {len(todo):,} backlog rows in to_be_processed.csv")
-    print(f"  {len(thumbs):,} cutouts for Browse" + (f", {failed_thumbs:,} unreadable" if failed_thumbs else "")
+    print(f"  {len(cutout_list):,} cutouts listed for Browse; {len(thumbs):,} sample thumbnails" + (f", {failed_thumbs:,} unreadable" if failed_thumbs else "")
           + (f"; {full_bytes / 1e6:,.0f} MB full size" if thumbs and not args.no_full_size else ""))
     if disk["scanned"]:
         print(f"  Storage: {storage_bytes / 1e12:,.2f} TB in {disk['batches']:,} batch folders, scanned in {disk['seconds']:,} s"

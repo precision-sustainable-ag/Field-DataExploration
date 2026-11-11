@@ -13,3 +13,4 @@ data
 uv.lock
 .python-versiondashboard/snapshot/
 scripts/dashboard.env
+dashboard/snapshot/
