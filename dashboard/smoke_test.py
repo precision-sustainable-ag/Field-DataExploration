@@ -40,6 +40,10 @@ def main() -> None:
     expected = ["Overview", "Coverage", "Priorities", "Data issues", "Browse", "Storage", "How it's counted"]
     assert tabs == expected, f"tabs are {tabs}"
     print(f"ok  tabs: {', '.join(tabs)}")
+    labels = [m.label for m in at.metric]
+    for want in ("Have", "To be processed", "Not copied yet", "Not developed", "Not annotated"):
+        assert want in labels, f"Overview tile {want!r} missing ({labels})"
+    print("ok  Overview tiles and backlog steps")
 
     open_tab(at, "Coverage")
     for value in ["Backlog", "Expected cutouts", "Cutouts"]:

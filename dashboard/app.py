@@ -31,6 +31,12 @@ GLOBUS_COLLECTION = os.environ.get("GLOBUS_COLLECTION_ID", "").strip()
 GLOBUS_BATCHES_PATH = unquote(os.environ.get("GLOBUS_FIELD_BATCHES_PATH", "").strip()).rstrip("/")
 GLOBUS_HTTPS = os.environ.get("GLOBUS_HTTPS_URL", "").strip().rstrip("/")
 STALE_AFTER_HOURS = 48  # the snapshot is rebuilt daily; warn after two days without one
+DB_STALE_AFTER_DAYS = 8  # field_exploration.db looks to be rebuilt weekly; warn once a rebuild is missed
+BACKLOG_STEPS = [  # (state, tile title, what it needs next), in pipeline order
+    ("Raw in blob only", "Not copied yet", "raw is only in blob storage; copy it to the research drive"),
+    ("Raw on NFS, not developed", "Not developed", "raw is on the research drive; develop it to JPG"),
+    ("Developed, not annotated", "Not annotated", "developed JPG exists; run annotation"),
+]
 
 # Colors from the dataviz reference palette: categorical slots 1-2 plus a neutral for "missing".
 CAT_COLORS = {"Have": "#2a78d6", "To be processed": "#eb6834", "Don't have": "#898781"}
@@ -152,6 +158,13 @@ if status and not status.get("ok") and str(status.get("at", "")) > D["generated_
 elif age_hours > STALE_AFTER_HOURS:
     st.warning(f"No new data for {age_hours / 24:.0f} days. The daily update from SUNNY may have stopped; "
                "check its log (~/push_snapshot.log on SUNNY).")
+try:  # refreshed_at is stored without a time zone; when() shows it as UTC, so treat it as UTC here too
+    db_age_days = (datetime.now(timezone.utc) - pd.Timestamp(D["refreshed_at"]).tz_localize(None).tz_localize("UTC")).days
+except (TypeError, ValueError):
+    db_age_days = None
+if db_age_days is not None and db_age_days > DB_STALE_AFTER_DAYS:
+    st.warning(f"The database was last rebuilt {db_age_days} days ago ({when(D['refreshed_at'])}). The snapshot still "
+               "updates daily, but the numbers won't change until field_exploration.db is rebuilt.")
 failed = [c for c in D["checks"] if not c["ok"]]
 if failed:
     st.error(f"Some counts may be wrong: {len(failed)} consistency check(s) failed. See Data issues.")
@@ -196,13 +209,50 @@ with tabs[0]:
         by_state = cube.groupby("state", observed=False).images.sum()
         plants = int(cube.loc[cube.state == "Cutout", "images"].sum())
         n_samples = int(apply_filters(samples_all).samples.sum())
-        tiles = [("Images", n_images, "all image records" if not (f_pt or f_loc or f_season) else f"of {fmt(cube_all.images.sum())} in total")]
-        tiles += [(c, by_cat.get(c, 0), f"{pct(by_cat.get(c, 0), n_images)} of images") for c in CATEGORIES]
-        tiles += [("Cutouts", cube.cutouts.sum(), f"segmented plants, from {fmt(plants)} images"),
-                  ("Samples with no images", n_samples, "field records no image points to")]
-        for col, (label, value, sub) in zip(st.columns(len(tiles)), tiles):
-            col.metric(label, fmt(value), border=True)
+        # Change since the previous database rebuild, from history (all data, so only shown without filters).
+        hist = pd.DataFrame(D["history"])
+        filtered = bool(f_pt or f_loc or f_season)
+        prev = hist.iloc[-2] if len(hist) >= 2 and not filtered else None
+        since = "since " + pd.Timestamp(prev["refreshed_at"]).strftime("%b %-d") if prev is not None else None
+
+        def change(now, col):
+            """now minus the previous rebuild's value, as text for st.metric; None when unknown."""
+            if prev is None or col not in prev or pd.isna(prev[col]):
+                return None
+            d = int(now) - int(prev[col])
+            return 0 if d == 0 else f"{d:+,}"
+
+        no_plant = int(by_state.get("Annotated, no plant found", 0))
+        tiles = [  # label, value, caption, history column, delta color
+            ("Images", n_images, "all image records" if not filtered else f"of {fmt(cube_all.images.sum())} in total", "images", "normal"),
+            ("Have", by_cat.get("Have", 0), f"{pct(by_cat.get('Have', 0), n_images)} of images: {fmt(plants)} with a plant, {fmt(no_plant)} no plant found", "Have", "normal"),
+            ("To be processed", by_cat.get("To be processed", 0), f"{pct(by_cat.get('To be processed', 0), n_images)} of images, the backlog",
+             "To be processed", "off"),
+            ("Don't have", by_cat.get("Don't have", 0), pct(by_cat.get("Don't have", 0), n_images) + " of images", "Don't have", "inverse"),
+            ("Cutouts", cube.cutouts.sum(), f"segmented plants, from {fmt(plants)} images", "cutouts", "normal"),
+            ("Samples with no images", n_samples, "field records no image points to", None, "off"),
+        ]
+        for col, (label, value, sub, hcol, color) in zip(st.columns(len(tiles)), tiles):
+            d = change(value, hcol) if hcol else None
+            col.metric(label, fmt(value), border=True, delta=d, delta_color=color, delta_description=since if d is not None else None)
             col.caption(sub)
+        if filtered and len(hist) >= 2:
+            st.caption("Changes since the last database rebuild are shown when no filters are set.")
+
+        st.subheader("Backlog by step")
+        st.caption("Where the images still to be processed are waiting, in pipeline order. Each image is counted once, "
+                   "at the step it is waiting for.")
+        step_cols = st.columns(len(BACKLOG_STEPS) + 1, vertical_alignment="center")
+        for c, (state, title, need) in zip(step_cols, BACKLOG_STEPS):
+            n = int(by_state.get(state, 0))
+            d = change(n, state)
+            c.metric(title, fmt(n), border=True, delta=d, delta_color="off", delta_description=since if d is not None else None)
+            c.caption(f"{pct(n, by_cat.get('To be processed', 0))} of the backlog: {need}")
+        todo_csv = SNAPSHOT / "to_be_processed.csv"
+        if todo_csv.exists():
+            step_cols[-1].download_button("Download the backlog (CSV, all data)", lambda: todo_csv.read_bytes(),
+                                          "to_be_processed.csv", "text/csv", on_click="ignore", width="stretch",
+                                          help="One row per image, with its step in the 'state' column.")
 
         left, right = st.columns(2)
         with left:
@@ -240,7 +290,6 @@ with tabs[0]:
             st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
         st.subheader("Week by week")
-        hist = pd.DataFrame(D["history"])
         if len(hist) >= 2:
             st.caption("Totals from each weekly build, all data (filters don't apply here).")
             fig = go.Figure()

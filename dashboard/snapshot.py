@@ -267,6 +267,8 @@ def update_history(path: Path, images: pd.DataFrame, refreshed_at: str, generate
         "cutout_images": int((images.state == "Cutout").sum()),
         "cutouts": int(images.n_cutouts.sum()),
         "storage_bytes": storage_bytes,
+        # Per-state counts (backlog steps, no-plant images); older rows lack them and read as empty.
+        **{state: int((images.state == state).sum()) for state in data.STATE_CATEGORY},
     }
     history = pd.read_csv(path) if path.exists() else pd.DataFrame(columns=list(row))
     history = history[history.refreshed_at != row["refreshed_at"]]  # rebuilds replace that refresh's row

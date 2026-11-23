@@ -82,6 +82,15 @@ choices and the Browse choices are all in the address, so copying it shares that
 e.g. `https://10.76.169.110:8501/?tab=Browse&plant_type=WEEDS&browse_species=waterhemp`.
 A choice that no longer exists in the data falls back to All.
 
+The Overview numbers show the change since the previous database rebuild (only when no filters
+are set), and **Backlog by step** splits "To be processed" into not copied from blob, not
+developed and not annotated, with the backlog CSV next to it. The per-step changes start after
+two rebuilds with this version, because older history rows don't have those counts.
+
+If the database itself hasn't been rebuilt for more than 8 days, a yellow banner says so: the
+snapshot still updates daily, but the numbers stay the same until `field_exploration.db` is
+rebuilt.
+
 If the morning update fails, the page shows a red banner with when and why (from
 `status.json`, which `push_snapshot.sh` sends even when the build fails). If no update arrives
 for two days, a yellow banner says so.
