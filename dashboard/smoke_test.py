@@ -43,10 +43,10 @@ def main() -> None:
 
     open_tab(at, "Coverage")
     for value in ["Backlog", "Expected cutouts", "Cutouts"]:
-        at.segmented_control(key="cov_measure").set_value(value).run()
+        at.segmented_control(key="count").set_value(value).run()
         check(at, f"Coverage count = {value}")
     for value in ["Season", "Plant type", "Location"]:
-        at.segmented_control(key="cov_cols").set_value(value).run()
+        at.segmented_control(key="columns").set_value(value).run()
         check(at, f"Coverage columns = {value}")
 
     open_tab(at, "Priorities")
@@ -56,15 +56,15 @@ def main() -> None:
     at.select_slider(key="t_slider").set_value(2000).run()
     check(at, "Priorities target slid (2,000)")
     assert at.session_state.target == 2000, at.session_state.target
-    at.segmented_control(key="prio_group").set_value("Plant type").run()
+    at.segmented_control(key="group").set_value("Plant type").run()
     check(at, "Priorities grouped by plant type")
     at.checkbox[0].check().run()
     check(at, "Priorities: show groups that meet the target")
-    at.segmented_control(key="prio_group").set_value("Species").run()
+    at.segmented_control(key="group").set_value("Species").run()
     check(at, "Priorities grouped by species")
 
     open_tab(at, "Data issues")
-    for widget in ("f_pt", "f_loc", "f_season"):
+    for widget in ("plant_type", "location", "season"):
         options = at.multiselect(key=widget).options
         if options:
             at.multiselect(key=widget).set_value([options[0]]).run()
@@ -73,16 +73,47 @@ def main() -> None:
     check(at, "filters reset")
 
     open_tab(at, "Browse")
-    for k in ("b_pt", "b_loc", "b_season", "b_species"):
+    for k in ("browse_plant_type", "browse_location", "browse_season", "browse_species"):
         box = at.selectbox(key=k)
         if len(box.options) > 1:
-            box.set_value(box.options[1].rsplit(" (", 1)[0]).run()  # options are shown as "name (count)"
+            box.set_value(box.options[1]).run()
             check(at, f"Browse {k} = {at.selectbox(key=k).value}")
             at.selectbox(key=k).set_value("All").run()
+
+    # The reported bug: picking WEEDS emptied the other lists until a page refresh. Now a list keeps
+    # its own choices, the others narrow to what exists, and nothing ends up empty.
+    all_types = at.selectbox(key="browse_plant_type").options
+    if "WEEDS" in all_types:
+        at.selectbox(key="browse_plant_type").set_value("WEEDS").run()
+        check(at, "Browse plant type = WEEDS")
+        assert at.selectbox(key="browse_plant_type").options == all_types, "plant type list shrank"
+        species = at.selectbox(key="browse_species").options
+        assert len(species) > 1, "species list empty after WEEDS"
+        at.selectbox(key="browse_species").set_value(species[1]).run()
+        check(at, f"Browse species = {species[1]}")
+        assert "WEEDS" in at.selectbox(key="browse_plant_type").options
+        assert len(at.selectbox(key="browse_location").options) > 1, "location list empty"
+        assert len(at.dataframe[0].value) > 0, "table empty"
+        at.selectbox(key="browse_species").set_value("All").run()
+        assert at.selectbox(key="browse_plant_type").options == all_types, "plant types did not come back"
+        check(at, "Browse: lists narrow and come back without a refresh")
+
+    # A shared link with a choice that no longer exists falls back to All instead of an empty table.
+    link = AppTest.from_file(APP, default_timeout=120)
+    link.query_params.update(tab="Browse", browse_species="no such species", plant_type="WEEDS")
+    link.run()
+    check(link, "Browse: opened from a link with an unknown species")
+    assert link.selectbox(key="browse_species").value == "All", link.selectbox(key="browse_species").value
+    assert link.multiselect(key="plant_type").value == ["WEEDS"], link.multiselect(key="plant_type").value
+    at.selectbox(key="browse_location").set_value(at.selectbox(key="browse_location").options[1]).run()
+    at.button(key="browse_reset").click().run()
+    check(at, "Browse: Reset")
+    assert all(at.selectbox(key=k).value == "All" for k in ("browse_plant_type", "browse_location", "browse_season", "browse_species"))
+
     assert at.dataframe, "Browse table missing"
-    at.text_input(key="b_search").set_value("A0").run()
+    at.text_input(key="search").set_value("A0").run()
     check(at, "Browse: search by image name")
-    at.text_input(key="b_search").set_value("").run()
+    at.text_input(key="search").set_value("").run()
     views = [b for b in at.button if b.key and b.key.startswith("view_")]
     if views:
         views[0].click().run()

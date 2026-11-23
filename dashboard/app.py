@@ -30,7 +30,7 @@ GLOBUS_COLLECTION = os.environ.get("GLOBUS_COLLECTION_ID", "").strip()
 # Copied from the Globus website's address bar, so they may still be URL-encoded (%2F).
 GLOBUS_BATCHES_PATH = unquote(os.environ.get("GLOBUS_FIELD_BATCHES_PATH", "").strip()).rstrip("/")
 GLOBUS_HTTPS = os.environ.get("GLOBUS_HTTPS_URL", "").strip().rstrip("/")
-STALE_AFTER_DAYS = 8
+STALE_AFTER_HOURS = 48  # the snapshot is rebuilt daily; warn after two days without one
 
 # Colors from the dataviz reference palette: categorical slots 1-2 plus a neutral for "missing".
 CAT_COLORS = {"Have": "#2a78d6", "To be processed": "#eb6834", "Don't have": "#898781"}
@@ -133,24 +133,40 @@ CPI = cube_all.cutouts.sum() / max(1, TOTAL.get("Have", 0))  # cutouts per annot
 
 st.title("Field-AgIR data")
 built = datetime.strptime(D["generated_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-age = (datetime.now(timezone.utc) - built).days
-st.caption(f"Database last rebuilt {when(D['refreshed_at'])} · snapshot built {when(D['generated_at'])}")
-if age > STALE_AFTER_DAYS:
-    st.warning(f"This snapshot is {age} days old. The weekly update from SUNNY may have stopped.")
+age_hours = (datetime.now(timezone.utc) - built).total_seconds() / 3600
+st.caption(f"Database last rebuilt {when(D['refreshed_at'])} · snapshot built {when(D['generated_at'])} (updated daily)")
+
+
+def read_status() -> dict:
+    """status.json from scripts/push_snapshot.sh: the result of the latest daily update attempt."""
+    try:
+        return json.loads((SNAPSHOT / "status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+status = read_status()
+if status and not status.get("ok") and str(status.get("at", "")) > D["generated_at"]:
+    st.error(f"The latest daily update failed ({when(status.get('at'))}, while {status.get('step', 'updating')}). "
+             f"Showing data from {when(D['generated_at'])}. Details: {status.get('message', 'none')}")
+elif age_hours > STALE_AFTER_HOURS:
+    st.warning(f"No new data for {age_hours / 24:.0f} days. The daily update from SUNNY may have stopped; "
+               "check its log (~/push_snapshot.log on SUNNY).")
 failed = [c for c in D["checks"] if not c["ok"]]
 if failed:
     st.error(f"Some counts may be wrong: {len(failed)} consistency check(s) failed. See Data issues.")
 
 # ---------- global filters ----------
 def reset_filters():
-    for k in ("f_pt", "f_loc", "f_season"):
+    for k in ("plant_type", "location", "season"):
         st.session_state[k] = []
 
 
 f1, f2, f3, f4 = st.columns([1, 1, 1, 0.6], vertical_alignment="bottom")
-f_pt = f1.multiselect("Plant type", D["dims"]["plant_type"], placeholder="All", key="f_pt")
-f_loc = f2.multiselect("Location", D["dims"]["location_code"], placeholder="All", key="f_loc")
-f_season = f3.multiselect("Season", D["dims"]["season"], placeholder="All", key="f_season")
+# Filters, tabs and toggles are kept in the URL (e.g. ?plant_type=WEEDS&tab=Browse), so a link opens the same view.
+f_pt = f1.multiselect("Plant type", D["dims"]["plant_type"], placeholder="All", key="plant_type", bind="query-params")
+f_loc = f2.multiselect("Location", D["dims"]["location_code"], placeholder="All", key="location", bind="query-params")
+f_season = f3.multiselect("Season", D["dims"]["season"], placeholder="All", key="season", bind="query-params")
 f4.button("Reset filters", on_click=reset_filters, width="stretch")
 
 
@@ -252,8 +268,8 @@ with tabs[1]:
     if tabs[1].open:  # only the open tab runs, so the other tabs cost nothing
         st.subheader("Coverage")
         c1, c2 = st.columns(2)
-        measure = c1.segmented_control("Count", ["Cutouts", "Backlog", "Expected cutouts"], default="Cutouts", required=True, key="cov_measure")
-        col_label = c2.segmented_control("Columns", ["Location", "Season", "Plant type"], default="Location", required=True, key="cov_cols")
+        measure = c1.segmented_control("Count", ["Cutouts", "Backlog", "Expected cutouts"], default="Cutouts", required=True, key="count", bind="query-params")
+        col_label = c2.segmented_control("Columns", ["Location", "Season", "Plant type"], default="Location", required=True, key="columns", bind="query-params")
         col = {"Location": "location", "Season": "season", "Plant type": "plant_type"}[col_label]
         st.caption({
             "Cutouts": "Segmented plants, by the species of the image they came from. Blank cells have none.",
@@ -302,7 +318,7 @@ def set_target(key: str):
 with tabs[2]:
     if tabs[2].open:  # only the open tab runs, so the other tabs cost nothing
         st.subheader("What to do next")
-        group_label = st.segmented_control("Group by", ["Species", "Plant type"], default="Species", required=True, key="prio_group")
+        group_label = st.segmented_control("Group by", ["Species", "Plant type"], default="Species", required=True, key="group", bind="query-params")
         key = "species" if group_label == "Species" else "plant_type"
         noun = "species" if key == "species" else "plant types"
         target = st.session_state.target
@@ -437,33 +453,35 @@ with tabs[3]:
 
 
 # ---------- browse ----------
-LINK_MODE = ("image" if GLOBUS_HTTPS and GLOBUS_BATCHES_PATH else
-             "folder" if GLOBUS_COLLECTION and GLOBUS_BATCHES_PATH else "")
+HAS_FOLDER_LINKS = bool(GLOBUS_COLLECTION and GLOBUS_BATCHES_PATH)
+HAS_IMAGE_LINKS = bool(GLOBUS_HTTPS and GLOBUS_BATCHES_PATH)
 
 
 def globus_folder_link(cutout_path: str) -> str:
-    if not (GLOBUS_COLLECTION and GLOBUS_BATCHES_PATH):
+    """The cutout's folder in the Globus file manager."""
+    if not HAS_FOLDER_LINKS:
         return ""
     return (f"https://app.globus.org/file-manager?origin_id={quote(GLOBUS_COLLECTION)}"
             f"&origin_path={quote(GLOBUS_BATCHES_PATH + '/' + str(Path(cutout_path).parent) + '/')}")
 
 
-def globus_link(cutout_path: str) -> str:
-    """The image itself when the collection's HTTPS URL is set, else its folder in the Globus file manager."""
-    if LINK_MODE == "image":
-        return f"{GLOBUS_HTTPS}{quote(GLOBUS_BATCHES_PATH + '/' + cutout_path)}"
-    return globus_folder_link(cutout_path)
+def globus_image_link(cutout_path: str) -> str:
+    """The image file itself, over the collection's HTTPS address (Globus asks viewers to sign in)."""
+    if not HAS_IMAGE_LINKS:
+        return ""
+    return f"{GLOBUS_HTTPS}{quote(GLOBUS_BATCHES_PATH + '/' + cutout_path)}"
 
 
 @st.cache_data(show_spinner="Loading the cutout list...")
-def load_cutouts(folder: str, mtime: float, link_mode: str) -> pd.DataFrame:
-    """Every cutout in the snapshot, with a Globus link per row. mtime and link_mode are cache keys."""
+def load_cutouts(folder: str, mtime: float, folder_links: bool, image_links: bool) -> pd.DataFrame:
+    """Every cutout in the snapshot, with Globus links. mtime and the link flags are cache keys."""
     df = pd.read_parquet(Path(folder) / "cutouts.parquet")
     for col in ("species", "plant_type", "location", "season", "batch"):
         df[col] = df[col].astype("string").fillna("")
-    df["link"] = df.cutout_path.map(globus_link) if link_mode else ""
+    df["image_link"] = df.cutout_path.map(globus_image_link) if image_links else ""
+    df["folder_link"] = df.cutout_path.map(globus_folder_link) if folder_links else ""
     # Repeated values as categories: about a third of the data to send to the browser for the full list.
-    for col in ("species", "plant_type", "location", "season", "batch") + (("link",) if link_mode == "folder" else ()):
+    for col in ("species", "plant_type", "location", "season", "batch", "folder_link"):
         df[col] = df[col].astype("category")
     return df
 
@@ -473,27 +491,58 @@ def show_cutout(t: dict):
     full = SNAPSHOT / t["full"] if t.get("full") else None
     st.markdown(f"**{t['species']}** · {t['name']}  \n{t['plant_type']} · {t['location']} · {t['season']}"
                 f"{' · batch ' + t['batch'] if t['batch'] else ''} · {fmt(t['w'])} × {fmt(t['h'])} px  \n`{t['path']}`")
-    b1, b2 = st.columns(2)
+    b1, b2, b3 = st.columns(3)
     if full and full.exists():
-        b1.download_button("Download full resolution (WebP)", full.read_bytes(), f"{t['name']}.webp", "image/webp", width="stretch")
-    link = globus_link(t["path"])
-    if link:
-        b2.link_button("Open the original in Globus", link, width="stretch")
+        b1.download_button("Download (WebP)", full.read_bytes(), f"{t['name']}.webp", "image/webp", width="stretch")
+    if HAS_IMAGE_LINKS:
+        b2.link_button("Open the original image", globus_image_link(t["path"]), width="stretch")
+    if HAS_FOLDER_LINKS:
+        b3.link_button("Open its folder in Globus", globus_folder_link(t["path"]), width="stretch")
     # Scale so the whole cutout fits on screen (about 620 px tall); the download keeps every pixel.
     shown_width = max(200, min(1100, int(620 * t["w"] / max(1, t["h"]))))
     st.image(str(full if full and full.exists() else SNAPSHOT / t["thumb"]), width=shown_width)
 
 
-BROWSE_CONTROLS = [("plant_type", "Plant type", "b_pt"), ("location", "Location", "b_loc"),
-                   ("season", "Season", "b_season"), ("species", "Species", "b_species")]
+# (column, label, widget key). The key is also the name in the URL, e.g. ?browse_species=waterhemp
+BROWSE_CONTROLS = [("plant_type", "Plant type", "browse_plant_type"), ("location", "Location", "browse_location"),
+                   ("season", "Season", "browse_season"), ("species", "Species", "browse_species")]
 
 
 def browse_matches(df: pd.DataFrame, skip: str | None = None) -> pd.DataFrame:
     for col, _, k in BROWSE_CONTROLS:
         v = st.session_state.get(k, "All")
-        if col != skip and v != "All":
+        if col != skip and v not in (None, "All"):
             df = df[df[col] == v]
     return df
+
+
+def browse_options(df: pd.DataFrame, col: str) -> list[str]:
+    """Values of col that still have cutouts given the other dropdowns, in a sensible order."""
+    present = browse_matches(df, skip=col)[col].astype(str).unique()
+    season_rank = {s: i for i, s in enumerate(D["dims"]["season"])}
+    return ["All"] + sorted(present, key=lambda v: (season_rank.get(v, 0) if col == "season" else 0, v.lower()))
+
+
+def settle_browse_selections(df: pd.DataFrame) -> dict:
+    """Make every dropdown hold a value that still matches something, before drawing them.
+    Labels never change (no counts in them), so Streamlit keeps selections across reruns; a
+    selection that no longer fits the others (or a stale one from an old link) falls back to All."""
+    for _ in range(len(BROWSE_CONTROLS) + 1):
+        changed = False
+        options = {col: browse_options(df, col) for col, _, _ in BROWSE_CONTROLS}
+        for col, _, k in BROWSE_CONTROLS:
+            if st.session_state.get(k, "All") not in options[col]:
+                st.session_state[k] = "All"
+                changed = True
+        if not changed:
+            return options
+    return options
+
+
+def reset_browse():
+    for _, _, k in BROWSE_CONTROLS:
+        st.session_state[k] = "All"
+    st.session_state["search"] = ""
 
 
 with tabs[4]:
@@ -503,31 +552,33 @@ with tabs[4]:
         if not list_file.exists():
             st.info("This snapshot has no cutout list yet. It appears after the next snapshot from SUNNY.")
         else:
-            everything = load_cutouts(str(SNAPSHOT), list_file.stat().st_mtime, LINK_MODE)
+            everything = load_cutouts(str(SNAPSHOT), list_file.stat().st_mtime, HAS_FOLDER_LINKS, HAS_IMAGE_LINKS)
             base = apply_filters(everything)
-            cols = st.columns(len(BROWSE_CONTROLS) + 1, vertical_alignment="bottom")
+            options = settle_browse_selections(base)
+            cols = st.columns([1, 1, 1, 1.4, 1.2, 0.6], vertical_alignment="bottom")
             for (col, label, k), c in zip(BROWSE_CONTROLS, cols):
-                avail = browse_matches(base, skip=col)[col].value_counts()
-                avail = avail[avail > 0]  # categories keep values that no longer match
-                opts = ["All"] + sorted(avail.index, key=lambda v: (D["dims"]["season"].index(v) if col == "season" and v in D["dims"]["season"] else 0, str(v)))
-                if st.session_state.get(k, "All") not in opts:
-                    st.session_state[k] = "All"
-                c.selectbox(label, opts, key=k, format_func=lambda v, a=avail: f"All ({fmt(a.sum())})" if v == "All" else f"{v} ({fmt(a.get(v, 0))})")
-            search = cols[-1].text_input("Image name contains", key="b_search", placeholder="e.g. NCA00123")
+                c.selectbox(label, options[col], key=k, bind="query-params",
+                            help="Only lists values that still have cutouts with the other choices.")
+            search = cols[4].text_input("Image name contains", key="search", placeholder="e.g. NCA00123", bind="query-params")
+            cols[5].button("Reset", key="browse_reset", on_click=reset_browse, width="stretch", help="Set the Browse choices back to All")
             view = browse_matches(base)
-            if search.strip():
+            if search and search.strip():
                 view = view[view.base_name.str.contains(search.strip(), case=False, regex=False)]
 
-            how = {"image": "Click a link to open the image in Globus (sign in with your NCSU account).",
-                   "folder": "Click a link to open that cutout's folder in Globus (sign in with your NCSU account), then click the file.",
-                   "": "Globus links aren't set up yet; paths are relative to field-batches on long-term storage."}[LINK_MODE]
+            how = ("**View image** opens the original file and **Open folder** opens its folder in Globus (sign in with your NCSU account)."
+                   if HAS_IMAGE_LINKS and HAS_FOLDER_LINKS else
+                   "**View image** opens the original file in Globus (sign in with your NCSU account)." if HAS_IMAGE_LINKS else
+                   "**Open folder** opens the cutout's folder in Globus (sign in with your NCSU account); then click the file." if HAS_FOLDER_LINKS else
+                   "Globus links aren't set up yet; paths are relative to field-batches on long-term storage.")
             st.caption(f"**{fmt(len(view))}** of {fmt(len(everything))} cutouts match. {how} The filters at the top apply too.")
             table = view.rename(columns={"species": "Species", "plant_type": "Plant type", "location": "Location", "season": "Season",
-                                         "batch": "Batch", "base_name": "Image", "cutout_index": "Cutout #",
-                                         "cutout_path": "File path", "link": "Link"})
-            shown_cols = ["Species", "Plant type", "Location", "Season", "Batch", "Image", "Cutout #", "File path"] + (["Link"] if LINK_MODE else [])
+                                         "batch": "Batch", "base_name": "Image name", "cutout_index": "Cutout #",
+                                         "cutout_path": "File path", "image_link": "Image", "folder_link": "Folder"})
+            shown_cols = (["Species", "Plant type", "Location", "Season", "Batch", "Image name", "Cutout #", "File path"]
+                          + (["Image"] if HAS_IMAGE_LINKS else []) + (["Folder"] if HAS_FOLDER_LINKS else []))
             st.dataframe(table[shown_cols], width="stretch", hide_index=True, height=600,
-                         column_config={"Link": st.column_config.LinkColumn("Link", display_text="View image" if LINK_MODE == "image" else "Open folder"),
+                         column_config={"Image": st.column_config.LinkColumn("Image", display_text="View image"),
+                                        "Folder": st.column_config.LinkColumn("Folder", display_text="Open folder"),
                                         "Cutout #": st.column_config.NumberColumn(format="plain")})
             root = D.get("field_batches") or D["storage"].get("root") or ""
 
@@ -540,12 +591,15 @@ with tabs[4]:
             st.download_button(f"Download these {fmt(len(view))} rows as CSV", browse_csv, "cutouts.csv", "text/csv", on_click="ignore")
 
             if not thumbs_all.empty:
-                with st.expander(f"Sample pictures (up to {D['thumbs_per_group']} per species × location)"):
-                    gallery = browse_matches(apply_filters(thumbs_all))
-                    st.caption("A random handful picked when the snapshot was built, following the filters above. Click View for full size.")
+                per = D.get("thumbs_grouping", "species × location")
+                with st.expander(f"Sample pictures (up to {D['thumbs_per_group']} per {per})"):
+                    gallery = browse_matches(apply_filters(thumbs_all)).sort_values(["species", "season", "name"])
+                    st.caption(f"Picked when the snapshot was built, following the choices above: {fmt(len(gallery))} pictures. "
+                               "Click View for a larger copy.")
                     if gallery.empty:
-                        st.caption("No sample pictures for these filters.")
-                    records = gallery.sort_values(["species", "name"]).head(48).to_dict("records")
+                        st.caption("No sample pictures for these choices.")
+                    limit = st.session_state.get("gallery_limit", 48)
+                    records = gallery.head(limit).to_dict("records")
                     for start in range(0, len(records), 6):
                         for t, c in zip(records[start:start + 6], st.columns(6)):
                             with c:
@@ -553,6 +607,9 @@ with tabs[4]:
                                 st.caption(f"**{t['species']}**  \n{t['name']}  \n{t['location']} · {t['season']}")
                                 if st.button("View", key=f"view_{t['name']}", width="stretch"):
                                     show_cutout(t)
+                    if len(gallery) > limit and st.button(f"Show more ({fmt(len(gallery) - limit)} more)"):
+                        st.session_state.gallery_limit = limit + 96
+                        st.rerun()
 
 
 # ---------- storage ----------

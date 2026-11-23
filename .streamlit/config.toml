@@ -1,9 +1,14 @@
 # Read by `streamlit run` from the repo root (scripts/run_dashboard.sh starts it there).
-[theme]
+# Defining both a light and a dark theme is what puts the theme switch (Light / Dark / System)
+# in the ⋮ menu; with a single [theme] the switch disappears.
+[theme.light]
 primaryColor = "#2a78d6"
 
+[theme.dark]
+primaryColor = "#5b9cf0"
+
 [client]
-toolbarMode = "minimal"   # no "Deploy" button
+toolbarMode = "viewer"   # ⋮ menu keeps print and the theme switch; hides Deploy, Rerun and Clear cache
 
 [browser]
 gatherUsageStats = false

@@ -39,8 +39,13 @@ cd ~/envs/Field-DataExploration && git checkout sbaghba/dashboard && uv sync
 cp scripts/dashboard.env.example scripts/dashboard.env
 ssh-keygen -t ed25519                     # skip if ~/.ssh/id_ed25519 exists
 ssh-copy-id sbaghba@10.76.169.110         # lets SUNNY copy to hopper-os without a password
-scripts/push_snapshot.sh                  # first snapshot (a few minutes)
+scripts/push_snapshot.sh                  # first snapshot (slow: makes all sample pictures)
 ```
+
+The first snapshot converts every sample picture (a few per species, location and season)
+and prints its progress, e.g. `made 1,200/4,000 pictures (3 min)`. Later runs reuse the
+pictures that are still picked and only make new ones, so they take a minute or two.
+`--workers N` sets how many pictures are made in parallel (default: up to 8).
 
 ## Start it, and keep it running
 
@@ -65,38 +70,58 @@ On SUNNY, refresh the snapshot every morning (`crontab -e`):
 
 ## Opening it
 
-On the NCSU VPN, open **https://10.76.169.110:8501**. The browser warns once that the
-certificate isn't from a known authority: choose Advanced, then continue. The connection is
-encrypted; a certificate browsers trust would need NC State IT.
+On the NCSU VPN, open **https://10.76.169.110:8501** (or https://lightning.cals.ncsu.edu:8501).
+The browser warns once that the certificate isn't from a known authority: choose Advanced,
+then continue. The connection is encrypted; a trusted certificate has to come from the team
+that runs lightning.
+
+Light or dark: the ⋮ menu at the top right has System / Light / Dark. The browser remembers it.
+
+Links keep what's on screen. The tab, the filters at the top, the Coverage and Priorities
+choices and the Browse choices are all in the address, so copying it shares that exact view,
+e.g. `https://10.76.169.110:8501/?tab=Browse&plant_type=WEEDS&browse_species=waterhemp`.
+A choice that no longer exists in the data falls back to All.
+
+If the morning update fails, the page shows a red banner with when and why (from
+`status.json`, which `push_snapshot.sh` sends even when the build fails). If no update arrives
+for two days, a yellow banner says so.
 
 ## Updating
 
 `git pull`, then `scripts/run_dashboard.sh restart` on hopper-os. Changes to `snapshot.py`
 also need a `git pull` on SUNNY; they show up after the next snapshot.
 
-Each tab has its own address, so you can share a link straight to one, e.g.
-`https://10.76.169.110:8501/?tab=Browse`.
-
 ## Globus links on Browse
 
 Browse lists every cutout (species, location, season, batch, file path), with all
-matching rows on screen and a CSV download. Each row can link to the real file in Globus:
+matching rows on screen and a CSV download. The Browse dropdowns narrow each other to
+combinations that exist; **Reset** sets them back to All. Each row has two Globus links:
 
-1. In the Globus website (app.globus.org), sign in with NCSU and open the
-   `field-batches` folder on the collection that holds long-term storage.
-2. From the browser's address bar, copy `origin_id=...` into `GLOBUS_COLLECTION_ID`
-   and `origin_path=...` into `GLOBUS_FIELD_BATCHES_PATH` in `scripts/dashboard.env`.
-3. Optional: if the collection's overview page shows an **HTTPS URL**, put it in
-   `GLOBUS_HTTPS_URL`. Links then open the image itself instead of its folder.
-4. `scripts/run_dashboard.sh restart`.
+- **View image** opens the cutout file itself (`GLOBUS_HTTPS_URL` + path).
+- **Open folder** opens its folder in the Globus file manager (`GLOBUS_COLLECTION_ID` + path).
 
-Viewers need Globus access to that collection to open the links.
+The values for NC State Research Storage are already in `dashboard.env.example`:
+
+```
+GLOBUS_COLLECTION_ID=2f7f6170-8d5c-11e9-8e6a-029d279f7e24
+GLOBUS_FIELD_BATCHES_PATH=/rsstu/users/r/raatwell/longterm_images3/field-batches
+GLOBUS_HTTPS_URL=https://m-ae9b45.7ce1a.03c0.gaccess.io
+```
+
+After changing them, `scripts/run_dashboard.sh restart`. Viewers sign in to Globus with their
+NCSU account and need access to that collection.
+
+"Sample pictures" (collapsed, under the table) shows a few cutouts per species, location and
+season, so every season appears. The same pictures stay from day to day unless new data
+changes the pick.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
 | "No snapshot found" | `ls ~/field-dashboard-data/data.json`; run `scripts/push_snapshot.sh` on SUNNY |
-| "This snapshot is N days old" | SUNNY's cron: `tail ~/push_snapshot.log` |
+| Red "latest daily update failed" banner | The banner gives the step and error; full output in `~/push_snapshot.log` on SUNNY |
+| Yellow "No new data for N days" | SUNNY's cron: `crontab -l`, `tail ~/push_snapshot.log` |
+| No ⋮ theme switch | `.streamlit/config.toml` must have both `[theme.light]` and `[theme.dark]` |
 | Page doesn't load | `scripts/run_dashboard.sh status`; log in `~/.local/state/field-dashboard/` |
 | No cutouts on Browse | snapshot printed "No cutout could be read": pass `--storage` to `snapshot.py` |
