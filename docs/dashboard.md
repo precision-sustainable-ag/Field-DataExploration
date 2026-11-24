@@ -65,7 +65,7 @@ crontab -e                                # add the two lines below
 On SUNNY, refresh the snapshot every morning (`crontab -e`):
 
 ```
-15 6 * * * $HOME/envs/Field-DataExploration/scripts/push_snapshot.sh >> $HOME/push_snapshot.log 2>&1
+0 8 * * * $HOME/envs/Field-DataExploration/scripts/push_snapshot.sh >> $HOME/push_snapshot.log 2>&1
 ```
 
 ## Opening it
@@ -129,6 +129,7 @@ changes the pick.
 | Symptom | Check |
 |---|---|
 | "No snapshot found" | `ls ~/field-dashboard-data/data.json`; run `scripts/push_snapshot.sh` on SUNNY |
+| Red banner "Permission denied ... Kerberos ticket has expired" | The research drive needs a Kerberos ticket, which comes from logging in to SUNNY and lasts about 14 hours (`/usr/bin/klist` shows it). ssh to SUNNY, then `scripts/push_snapshot.sh` |
 | Red "latest daily update failed" banner | The banner gives the step and error; full output in `~/push_snapshot.log` on SUNNY |
 | Yellow "No new data for N days" | SUNNY's cron: `crontab -l`, `tail ~/push_snapshot.log` |
 | No ⋮ theme switch | `.streamlit/config.toml` must have both `[theme.light]` and `[theme.dark]` |

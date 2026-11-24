@@ -257,7 +257,8 @@ with tabs[0]:
         left, right = st.columns(2)
         with left:
             st.subheader("Where the images stop")
-            st.caption("Each bar is a subset of the one above it. Hover a bar to see how many images didn't reach it, and why.")
+            st.caption("Each bar is a subset of the one above it. \"% of all\" is out of all images; the second % is out of "
+                       "the bar above, i.e. how many got past that step. Hover a bar to see how many didn't, and why.")
             have = by_cat.get("Have", 0)
             stages = [
                 ("All images", n_images, "Every image record in file_status.", ""),
@@ -266,14 +267,24 @@ with tabs[0]:
                 ("Annotated", have, "Went through the annotation pipeline.", "developed but not annotated yet"),
                 ("Plant found", plants, "Annotation found and segmented at least one plant.", "annotated, but no plant was found"),
             ]
-            hover = [f"<b>{n}</b>: {fmt(v)} ({pct(v, n_images)} of all)<br>{d}" + (f"<br>Not here: {fmt(stages[i - 1][1] - v)} {lost}" if i else "")
+            def bar_text(i):  # share of all images, then share of the bar above (how many got past that step)
+                name, v = stages[i][:2]
+                if i == 0:
+                    return f"{fmt(v)} images"
+                text = f"{fmt(v)} · {pct(v, n_images)} of all"
+                if i > 1:
+                    above, av = stages[i - 1][:2]
+                    text += f" · {pct(v, av)} of {above.lower()}"
+                return text
+
+            hover = [f"<b>{n}</b>: {bar_text(i)}<br>{d}" + (f"<br>Not here: {fmt(stages[i - 1][1] - v)} {lost}" if i else "")
                      for i, (n, v, d, lost) in enumerate(stages)]
             fig = go.Figure(go.Bar(
                 y=[s[0] for s in stages], x=[s[1] for s in stages], orientation="h", marker_color=CAT_COLORS["Have"],
-                text=[f"{fmt(v)} · {pct(v, n_images)}" for _, v, _, _ in stages], textposition="outside", cliponaxis=False,
+                text=[bar_text(i) for i in range(len(stages))], textposition="outside", cliponaxis=False,
                 hovertext=hover, hoverinfo="text"))
             fig.update_yaxes(autorange="reversed")
-            fig.update_xaxes(visible=False, range=[0, max(1, n_images) * 1.25])
+            fig.update_xaxes(visible=False, range=[0, max(1, n_images) * 1.9])  # room for the labels
             fig.update_layout(height=260, margin=dict(l=0, r=10, t=10, b=10), bargap=0.35)
             st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
         with right:
